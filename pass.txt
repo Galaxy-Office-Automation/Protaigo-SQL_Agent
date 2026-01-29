@@ -1,0 +1,35 @@
+The credentials for the two databases in 10.10.90.92 vm are:
+
+1. PostgreSQL (Port 5432)
+Database: app_db
+User: app_user
+Password: StrongPassword123!
+
+2. MySQL (Port 3306 - Docker)
+Database: sample_db
+User: app_user
+Password: AppPass123!
+Root Password: RootPass123!
+
+
+
+
+
+
+
+In 10.10.90.94 vm
+
+1. Kavach Database (PostgreSQL)
+
+Host: localhost (Internal Port: 5434)
+Database Name: alerts
+Username: kavach
+Password: kavach123
+
+2. Zabbix Database (MySQL)
+
+Host: 13.202.102.183
+Port: 3306
+Database Name: zabbix
+Username: ai
+Password: Galaxy@123
