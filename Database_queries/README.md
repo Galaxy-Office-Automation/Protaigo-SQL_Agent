@@ -1,34 +1,26 @@
-# Database Long-Running Query Scripts
+# Database Analysis Queries
 
-Python scripts for executing long-running database queries (20-25 minutes).
-Used for testing Zabbix monitoring alerts.
+Python scripts for banking data analysis on the pgbench dataset.
 
-## Scripts
+## Reports
 
-| Script | Duration | Type |
-|--------|----------|------|
-| `long_query_postgres_sleep.py` | 20 min (exact) | Sleep-based |
-| `long_query_postgres_compute.py` | 20-25 min | CPU-intensive |
-
-## Requirements
-
-```bash
-pip install psycopg2-binary
-```
+| Script | Description |
+|--------|-------------|
+| `long_query_postgres_sleep.py` | Account Balance Reconciliation Report |
+| `long_query_postgres_compute.py` | Fraud Detection Analysis |
 
 ## Usage
 
 ```bash
-# Sleep-based (guaranteed 20 minutes)
+# Balance Reconciliation Report
 python3 long_query_postgres_sleep.py
 
-# Compute-intensive (actual database work)
+# Fraud Detection Analysis  
 python3 long_query_postgres_compute.py
 ```
 
-## PostgreSQL Connection
+## Database
 
-- **Host**: localhost
-- **Port**: 5432
 - **Database**: app_db
 - **User**: app_user
+- **Port**: 5432
