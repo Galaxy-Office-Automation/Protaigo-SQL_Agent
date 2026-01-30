@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test the SQL Query Optimizer Agent with the long-running query
+Test the SQL Query Optimizer Agent with the realistic fraud detection query
 """
 
 import sys
@@ -10,74 +10,75 @@ from agent.orchestrator import AgentOrchestrator
 from output.formatter import OutputFormatter
 
 
-# The slow query from long_query_postgres_compute.py
-SLOW_QUERY = """
-WITH 
--- First pass: sample accounts for cross join
-sample_a AS (
-    SELECT aid, bid, abalance 
-    FROM pgbench_accounts 
-    WHERE aid <= 50000
-),
-sample_b AS (
-    SELECT aid, bid, abalance 
-    FROM pgbench_accounts 
-    WHERE aid BETWEEN 50001 AND 100000
-),
--- Cross join creates 50000 * 50000 = 2.5 billion row combinations
-cross_computed AS (
+# The fraud detection query from long_query_postgres_compute.py
+FRAUD_DETECTION_QUERY = """
+WITH account_data AS (
     SELECT 
-        a.aid AS aid1,
-        b.aid AS aid2,
-        a.bid AS bid1,
-        b.bid AS bid2,
-        a.abalance AS bal1,
-        b.abalance AS bal2,
-        ABS(a.abalance - b.abalance) AS balance_diff,
-        (a.abalance + b.abalance)::BIGINT AS combined_balance,
-        SQRT(ABS(a.abalance::FLOAT * b.abalance::FLOAT) + 1) AS sqrt_product,
-        LOG(ABS(a.abalance::FLOAT) + ABS(b.abalance::FLOAT) + 2) AS log_sum,
-        SIN(a.abalance::FLOAT / 1000) * COS(b.abalance::FLOAT / 1000) AS trig_calc,
-        POWER(ABS(a.abalance - b.abalance)::FLOAT + 1, 0.3) AS power_diff
-    FROM sample_a a
-    CROSS JOIN sample_b b
+        a.aid,
+        a.bid,
+        a.abalance,
+        b.bbalance,
+        NTILE(100) OVER (ORDER BY a.abalance) as percentile
+    FROM pgbench_accounts a
+    JOIN pgbench_branches b ON a.bid = b.bid
 ),
--- Heavy aggregation over 2.5 billion rows
-aggregated AS (
+peer_comparison AS (
     SELECT 
-        bid1,
-        bid2,
-        COUNT(*) AS pair_count,
-        SUM(balance_diff)::NUMERIC AS total_diff,
-        AVG(combined_balance) AS avg_combined,
-        STDDEV(sqrt_product) AS stddev_sqrt,
-        SUM(log_sum) AS sum_log,
-        AVG(trig_calc) AS avg_trig,
-        MAX(power_diff) AS max_power,
-        MIN(power_diff) AS min_power,
-        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY balance_diff) AS median_diff
-    FROM cross_computed
-    GROUP BY bid1, bid2
+        a1.aid as account_id,
+        a1.bid as branch_id,
+        a1.abalance as balance,
+        a2.aid as peer_id,
+        a2.abalance as peer_balance,
+        ABS(a1.abalance - a2.abalance) as difference,
+        CASE 
+            WHEN a1.abalance > 0 AND a2.abalance > 0 
+            THEN LEAST(a1.abalance, a2.abalance)::FLOAT / 
+                 GREATEST(a1.abalance, a2.abalance)
+            ELSE 0 
+        END as similarity
+    FROM account_data a1
+    JOIN account_data a2 ON a1.bid = a2.bid 
+        AND a1.aid != a2.aid
+        AND ABS(a1.percentile - a2.percentile) <= 5
+    WHERE a1.aid <= 80000 AND a2.aid <= 80000
 ),
--- Additional computation pass
-final_calc AS (
+risk_metrics AS (
     SELECT 
-        *,
-        total_diff / NULLIF(pair_count, 0) AS normalized_diff,
-        avg_combined * stddev_sqrt AS complexity_score,
-        RANK() OVER (ORDER BY total_diff DESC) AS diff_rank
-    FROM aggregated
+        account_id,
+        branch_id,
+        balance,
+        COUNT(DISTINCT peer_id) as peer_count,
+        AVG(difference) as avg_diff,
+        AVG(similarity) as avg_similarity,
+        STDDEV(difference) as diff_volatility
+    FROM peer_comparison
+    GROUP BY account_id, branch_id, balance
+    HAVING COUNT(DISTINCT peer_id) >= 10
+),
+risk_scores AS (
+    SELECT 
+        r.*,
+        CASE 
+            WHEN avg_similarity < 0.3 THEN 'HIGH_RISK'
+            WHEN avg_similarity < 0.5 THEN 'MEDIUM_RISK'
+            WHEN avg_similarity < 0.7 THEN 'LOW_RISK'
+            ELSE 'NORMAL'
+        END as risk_level,
+        (1 - avg_similarity) * 100 as anomaly_score
+    FROM risk_metrics r
 )
 SELECT 
-    bid1,
-    bid2,
-    pair_count,
-    total_diff,
-    avg_combined,
-    complexity_score,
-    diff_rank
-FROM final_calc
-ORDER BY complexity_score DESC NULLS LAST
+    account_id,
+    branch_id,
+    balance,
+    peer_count,
+    avg_diff,
+    avg_similarity,
+    anomaly_score,
+    risk_level
+FROM risk_scores
+WHERE risk_level IN ('HIGH_RISK', 'MEDIUM_RISK')
+ORDER BY anomaly_score DESC
 LIMIT 500;
 """
 
@@ -87,22 +88,22 @@ def main():
     print("SQL Query Optimizer Agent - Test")
     print("=" * 60)
     print()
-    print("Testing with the long-running query from Database_queries...")
+    print("Testing with the Fraud Detection Query...")
     print()
     
-    # Initialize orchestrator (disable LLM for faster testing initially)
+    # Initialize orchestrator
     orchestrator = AgentOrchestrator(use_llm=True, use_explain=False)
     formatter = OutputFormatter()
     
     try:
         # Run optimization
         print("Analyzing query...")
-        result = orchestrator.optimize(SLOW_QUERY)
+        result = orchestrator.optimize(FRAUD_DETECTION_QUERY)
         
-        # Print results using rich formatter
+        # Print results
         formatter.print_result(result)
         
-        # Also print the line-by-line report
+        # Print line-by-line report
         print("\n" + "=" * 60)
         print("LINE-BY-LINE OPTIMIZATION REPORT")
         print("=" * 60)
@@ -118,7 +119,7 @@ def main():
             print(f"  Suggestion: {entry.get('suggestion', 'N/A')}")
         
         print("\n" + "=" * 60)
-        print("TEST COMPLETED SUCCESSFULLY")
+        print("TEST COMPLETED")
         print("=" * 60)
         
     except Exception as e:
