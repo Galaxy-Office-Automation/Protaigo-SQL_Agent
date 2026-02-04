@@ -20,19 +20,19 @@ class QueryComponent:
 @dataclass
 class ParsedQuery:
     """Complete parsed representation of a SQL query"""
-    original_query: str
-    query_type: str
-    components: List[QueryComponent]
-    ctes: List[Dict[str, Any]]
-    tables: List[str]
-    joins: List[Dict[str, Any]]
-    where_clauses: List[str]
-    order_by: Optional[str]
-    group_by: Optional[str]
-    limit: Optional[int]
-    has_cross_join: bool
-    has_subquery: bool
-    line_mapping: Dict[int, str]
+    original_query: str          # The raw SQL
+    query_type: str              # SELECT, INSERT, UPDATE, DELETE
+    components: List[QueryComponent] # List of query components
+    ctes: List[Dict[str, Any]]       # List of CTEs(common table expressions)
+    tables: List[str]                # List of tables
+    joins: List[Dict[str, Any]]      # List of joins
+    where_clauses: List[str]         # List of WHERE clauses
+    order_by: Optional[str]          # ORDER BY clause
+    group_by: Optional[str]          # GROUP BY clause
+    limit: Optional[int]             # LIMIT clause
+    has_cross_join: bool             # Whether the query has a CROSS JOIN
+    has_subquery: bool               # Whether the query has a subquery
+    line_mapping: Dict[int, str]     # Mapping of line numbers to content
 
 
 class SQLParser:

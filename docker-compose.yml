@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  sql-system:
+    build: .
+    container_name: sql-system
+    ports:
+      - "5050:5050"
+    environment:
+      - PG_HOST=10.10.90.92
+      - PG_PORT=5432
+      - PG_DATABASE=app_db
+      - PG_USER=app_user
+      - PG_PASSWORD=StrongPassword123!
+      - ZABBIX_HOST=13.202.102.183
+      - ZABBIX_PORT=3306
+      - ZABBIX_DATABASE=zabbix
+      - ZABBIX_USER=ai
+      - ZABBIX_PASSWORD=Galaxy@123
+      - FAST_QUERY_PATH=/app/testing_queries/fraud_detection_fast.sql
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    volumes:
+      - ./testing_queries:/app/testing_queries:ro

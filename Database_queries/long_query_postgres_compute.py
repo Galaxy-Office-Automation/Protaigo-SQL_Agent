@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 
 DB_CONFIG = {
-    "host": "localhost",
+    "host": "10.10.90.92",
     "port": 5432,
     "database": "app_db",
     "user": "app_user",
