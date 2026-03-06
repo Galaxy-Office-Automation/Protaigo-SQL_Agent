@@ -92,3 +92,71 @@ or via Docker:
 ```bash
 sudo docker exec -it mysql-db mysql -uapp_user -pAppPass123! sample_db
 ```
+
+## 7. Directory Structure
+```text
+DB_setup/
+├── alert_resolution_api.py
+├── Database_queries/
+│   ├── count_long_queries.py
+│   ├── detect_long_queries.py
+│   ├── long_query_detection_test.ipynb
+│   ├── long_query_detection_test_output.ipynb
+│   ├── long_query_heavy_1.py
+│   ├── long_query_heavy_2.py
+│   ├── long_query_heavy_3.py
+│   ├── long_query_postgres_compute.py
+│   ├── long_query_postgres_sleep.py
+│   ├── long_query_testing_agentic.py
+│   ├── pgbench_schema.yml
+│   ├── README.md
+│   ├── sqls/
+│   └── trigger_long_query.sh
+├── database_queries.ipynb
+├── DB_Sql_queires/
+│   ├── detect_long_queries_details.sql
+│   ├── detect_max_duration.sql
+│   ├── fraud_detection.sql
+│   ├── optimized_fraud_detection.sql
+│   └── original_fraud_detection.sql
+├── docker-compose.yml
+├── Dockerfile
+├── generate_data.sh
+├── manual_error_trigger/
+│   └── vmware_tools_alert.md
+├── MYSQL_DOCUMENTATION.md
+├── pass.txt
+├── populate_mysql.sh
+├── README.md
+├── setup_db.sh
+├── sql_optimizer_agent/
+│   ├── agent/
+│   ├── analyzer/
+│   ├── api_server.log
+│   ├── api_server.py
+│   ├── config.py
+│   ├── .env
+│   ├── fastapi_server.log
+│   ├── fastapi_server_nollm.py
+│   ├── fastapi_server.py
+│   ├── main.py
+│   ├── optimizer/
+│   ├── output/
+│   ├── README.md
+│   ├── requirements.txt
+│   ├── server.log
+│   ├── server_nollm.log
+│   ├── tests/
+│   └── validator/
+├── temp/
+│   ├── connect.txt
+│   ├── long_running_query_optimized.sql
+│   ├── long_running_query.sql
+│   └── tally_db_access_notebook.ipynb
+├── testing_queries/
+│   ├── documentation.md
+│   ├── fraud_detection_fast.sql
+│   ├── fraud_detection_slow_REMOVED_FROM_ZABBIX.sql.bak
+│   └── fraud_detection_slow.sql
+└── trigger_long_query.sh
+```

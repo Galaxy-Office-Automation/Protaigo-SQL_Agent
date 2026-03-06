@@ -1,0 +1,8 @@
+nohup: ignoring input
+INFO:     Started server process [2421689]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8009 (Press CTRL+C to quit)
+Initializing Agent Orchestrator... (this takes ~16s but only happens ONCE)
+Agent Ready!
+INFO:     127.0.0.1:37914 - "POST /analyze HTTP/1.1" 200 OK

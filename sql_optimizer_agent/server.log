@@ -1,0 +1,21 @@
+INFO:     Started server process [1250177]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8009 (Press CTRL+C to quit)
+Initializing Agent Orchestrator... (this takes ~16s but only happens ONCE)
+Agent Ready!
+INFO:     127.0.0.1:44340 - "GET / HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:42568 - "POST /analyze HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43186 - "POST /analyze HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47674 - "POST /analyze HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39916 - "POST /analyze HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39922 - "POST /analyze HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45566 - "POST /analyze HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45582 - "POST /analyze HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35668 - "POST /analyze HTTP/1.1" 200 OK
+INFO:     10.10.90.94:43702 - "POST /analyze HTTP/1.1" 200 OK
+INFO:     10.10.90.94:59248 - "POST /analyze HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1250177]

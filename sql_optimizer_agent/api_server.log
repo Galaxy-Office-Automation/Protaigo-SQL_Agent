@@ -1,0 +1,40 @@
+nohup: ignoring input
+INFO:     Started server process [2418426]
+INFO:     Waiting for application startup.
+2026-03-05 04:41:06,203 - INFO - Initializing AgentOrchestrator...
+2026-03-05 04:41:06,203 - INFO - AgentOrchestrator initialized!
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:5051 (Press CTRL+C to quit)
+WARNING: Optimized query failed syntax validation: ['PostgreSQL syntax validation failed: syntax error at or near "LIMIT"\nLINE 19: ORDER BY synthetic_date LIMIT 1000;\n                                 ^']
+WARNING: Rule-based query failed validation. Returning original query.
+INFO:     10.10.90.94:43664 - "POST /analyze HTTP/1.1" 200 OK
+WARNING: Optimized query failed syntax validation: ['PostgreSQL syntax validation failed: syntax error at or near "LIMIT"\nLINE 19: ORDER BY synthetic_date LIMIT 1000;\n                                 ^']
+WARNING: Rule-based query failed validation. Returning original query.
+INFO:     10.10.90.94:43680 - "POST /analyze HTTP/1.1" 200 OK
+WARNING: Optimized query failed syntax validation: ['PostgreSQL syntax validation failed: syntax error at or near "LIMIT"\nLINE 7: ...g_sum_4000, AVG(abalance) OVER ( PARTITION BY bid LIMIT 1000...\n                                                             ^']
+WARNING: Rule-based query failed validation. Returning original query.
+INFO:     10.10.90.94:54676 - "POST /analyze HTTP/1.1" 200 OK
+WARNING: Optimized query failed syntax validation: ['PostgreSQL syntax validation failed: syntax error at or near "LIMIT"\nLINE 7: ...g_sum_4000, AVG(abalance) OVER ( PARTITION BY bid LIMIT 1000...\n                                                             ^']
+WARNING: Rule-based query failed validation. Returning original query.
+INFO:     10.10.90.94:60210 - "POST /analyze HTTP/1.1" 200 OK
+WARNING: Optimized query failed syntax validation: ['PostgreSQL syntax validation failed: syntax error at or near "LIMIT"\nLINE 19: ORDER BY synthetic_date LIMIT 1000;\n                                 ^']
+WARNING: Rule-based query failed validation. Returning original query.
+INFO:     10.10.90.94:58338 - "POST /analyze HTTP/1.1" 200 OK
+WARNING: Optimized query failed syntax validation: ['PostgreSQL syntax validation failed: syntax error at or near "LIMIT"\nLINE 19: ORDER BY synthetic_date LIMIT 1000;\n                                 ^']
+WARNING: Rule-based query failed validation. Returning original query.
+INFO:     10.10.90.94:58352 - "POST /analyze HTTP/1.1" 200 OK
+WARNING: Optimized query failed syntax validation: ['PostgreSQL syntax validation failed: syntax error at or near "LIMIT"\nLINE 6: (SELECT COUNT(* LIMIT 500)\n                        ^']
+WARNING: Rule-based query failed validation. Returning original query.
+INFO:     10.10.90.94:38972 - "POST /analyze HTTP/1.1" 200 OK
+WARNING: Optimized query failed syntax validation: ['PostgreSQL syntax validation failed: syntax error at or near "LIMIT"\nLINE 6: (SELECT COUNT(* LIMIT 500)\n                        ^']
+WARNING: Rule-based query failed validation. Returning original query.
+INFO:     10.10.90.94:53836 - "POST /analyze HTTP/1.1" 200 OK
+WARNING: Optimized query failed syntax validation: ['PostgreSQL syntax validation failed: syntax error at or near "LIMIT"\nLINE 3: SELECT COUNT(* LIMIT 500) \n                       ^']
+WARNING: Rule-based query failed validation. Returning original query.
+INFO:     10.10.90.94:50876 - "POST /analyze HTTP/1.1" 200 OK
+WARNING: Optimized query failed syntax validation: ['PostgreSQL syntax validation failed: syntax error at or near "LIMIT"\nLINE 3: SELECT COUNT(* LIMIT 500) \n                       ^']
+WARNING: Rule-based query failed validation. Returning original query.
+INFO:     10.10.90.94:49862 - "POST /analyze HTTP/1.1" 200 OK
+WARNING: Optimized query failed syntax validation: ['PostgreSQL syntax validation failed: syntax error at or near "LIMIT"\nLINE 3: SELECT COUNT(* LIMIT 500) \n                       ^']
+WARNING: Rule-based query failed validation. Returning original query.
+INFO:     10.10.90.94:49870 - "POST /analyze HTTP/1.1" 200 OK

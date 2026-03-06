@@ -118,6 +118,22 @@ class OptimizationStrategies:
                 description='Sample table instead of full scan',
                 transformation='Add TABLESAMPLE clause',
                 expected_improvement='Reduces rows to process'
+            ),
+            OptimizationStrategy(
+                strategy_id='REDUCE_RECURSION_DEPTH',
+                name='Reduce Recursion Depth',
+                applies_to=['RECURSIVE_CTE'],
+                description='Lower the termination depth in recursive CTE',
+                transformation='Update depth condition (e.g., < 3)',
+                expected_improvement='Exponential reduction in processing'
+            ),
+            OptimizationStrategy(
+                strategy_id='AGGRESSIVE_LIMIT_CTE',
+                name='Aggressive CTE Limit',
+                applies_to=['LARGE_CTE_OUTPUT'],
+                description='Apply small LIMIT inside every CTE',
+                transformation='Add LIMIT 1000 to all CTEs',
+                expected_improvement='Guarantees fast intermediate results'
             )
         ]
         
@@ -168,6 +184,16 @@ class OptimizationStrategies:
             
             elif bn_type == 'UNBOUND_WHERE_RANGE':
                 sugg = self._suggest_bound_range(lines, bottleneck)
+                if sugg:
+                    suggestions.append(sugg)
+            
+            elif bn_type == 'RECURSIVE_CTE':
+                sugg = self._suggest_recursion_reduction(lines, bottleneck)
+                if sugg:
+                    suggestions.append(sugg)
+                
+            elif bn_type == 'LARGE_CTE_OUTPUT':
+                sugg = self._suggest_aggressive_limit(lines, bottleneck)
                 if sugg:
                     suggestions.append(sugg)
         
@@ -268,13 +294,27 @@ class OptimizationStrategies:
     
     def _suggest_add_limit(self, lines: List[str], 
                            bottleneck: Any) -> Optional[OptimizationSuggestion]:
-        """Suggest adding LIMIT after ORDER BY"""
+        """Suggest adding LIMIT after ORDER BY, but skip if LIMIT already exists."""
         line_num = bottleneck.line_number
         if line_num <= 0 or line_num > len(lines):
             return None
         
         line = lines[line_num - 1]
         
+        # 1. Skip if part of a window function OVER clause
+        if re.search(r'OVER\s*\(\s*[^)]*ORDER\s+BY', line, re.IGNORECASE):
+            return None
+            
+        # 2. Skip if the current line already has LIMIT
+        if 'LIMIT' in line.upper():
+            return None
+            
+        # 3. Skip if the NEXT line has LIMIT (common for ORDER BY \n LIMIT)
+        if line_num < len(lines):
+            next_line = lines[line_num].upper()
+            if 'LIMIT' in next_line:
+                return None
+                
         return OptimizationSuggestion(
             strategy_id='ADD_LIMIT_TO_ORDER',
             line_number=line_num,
@@ -320,4 +360,54 @@ class OptimizationStrategies:
                     confidence=0.75
                 )
         
+        return None
+
+    def _suggest_recursion_reduction(self, lines: List[str], 
+                                     bottleneck: Any) -> Optional[OptimizationSuggestion]:
+        """Suggest reducing recursion depth"""
+        line_num = bottleneck.line_number
+        if line_num <= 0 or line_num > len(lines):
+            return None
+        
+        line = lines[line_num - 1]
+        # Look for depth < N or depth <= N
+        match = re.search(r'(\w*depth\w*)\s*([<>]=?)\s*(\d+)', line, re.IGNORECASE)
+        if match:
+            col, op, val = match.groups()
+            orig_val = int(val)
+            if orig_val > 3:
+                new_val = 3
+                new_line = line.replace(val, str(new_val))
+                return OptimizationSuggestion(
+                    strategy_id='REDUCE_RECURSION_DEPTH',
+                    line_number=line_num,
+                    original_content=line.strip(),
+                    suggested_content=new_line.strip(),
+                    explanation=f"Reduce recursion depth from {orig_val} to {new_val}. "
+                               "Recursion complexity grows exponentially with depth.",
+                    expected_improvement=f"Significant speedup (depth capped at {new_val})",
+                    confidence=0.95
+                )
+        return None
+
+    def _suggest_aggressive_limit(self, lines: List[str], 
+                                  bottleneck: Any) -> Optional[OptimizationSuggestion]:
+        """Suggest adding a small LIMIT inside a CTE"""
+        line_num = bottleneck.line_number
+        if line_num <= 0 or line_num > len(lines):
+            return None
+        
+        line = lines[line_num - 1]
+        # Only suggest if it ends a CTE (contains closing paren)
+        if ')' in line:
+            new_line = line.replace(')', ' LIMIT 1000)')
+            return OptimizationSuggestion(
+                strategy_id='AGGRESSIVE_LIMIT_CTE',
+                line_number=line_num,
+                original_content=line.strip(),
+                suggested_content=new_line.strip(),
+                explanation="Add aggressive LIMIT 1000 inside the CTE to ensure fast intermediate processing.",
+                expected_improvement="Guaranteed fast intermediate results",
+                confidence=0.9
+            )
         return None

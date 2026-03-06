@@ -74,3 +74,9 @@ The Discovery Rule that disables your VM is **NOT** on the VM host itself. It is
     *   Set **"Delete lost resources"** to **"Never"**.
     *   Set **"Disable lost resources"** to **"Never"**.
     *   *Note: Zabbix requires "Disable" time to be shorter than "Delete" time, or both to be Never.*
+
+
+    {                                                                                                                           
+    "problem": "System time is out of sync",                                                                                  
+    "host_name": "AI_Team_92"                                                                                                 
+  }

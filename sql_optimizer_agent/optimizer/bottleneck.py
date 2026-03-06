@@ -20,27 +20,36 @@ class Bottleneck:
 
 
 class BottleneckDetector:
-    """Detects performance bottlenecks in SQL queries"""
+    """Detects performance bottlenecks in SQL queries( checklist of "bad practices") think of it as knowledge base of "bad practices" """
     
     def __init__(self):
         self.detection_rules = self._initialize_rules()
     
     def _initialize_rules(self) -> List[Dict[str, Any]]:
-        """Initialize bottleneck detection rules"""
+        """Initialize bottleneck detection rules
+        
+        Severity Rubric:
+        - HIGH:   slowdown (flawed logic).
+                  Examples: CROSS JOIN, N+1 queries.
+        - MEDIUM: Linear slowdown or resource waste.
+                  Examples: No index usage, full table sorts.
+        - LOW:    Minor inefficiency.
+                  Examples: SELECT DISTINCT on unique cols.
+        """
         return [
             {
                 'name': 'CROSS_JOIN_EXPLOSION',
-                'pattern': r'CROSS\s+JOIN',
-                'severity': 'HIGH',
+                'pattern': r'CROSS\s+JOIN', #a specific pattern to look for 
+                'severity': 'HIGH', # how critical is this bottleneck 
                 'description': 'Cross join creates cartesian product (n×m rows)',
-                'impact_template': 'Multiplies row count exponentially',
-                'suggestion': 'Add JOIN condition or use LIMIT in CTEs'
+                'impact_template': 'Multiplies row count',# too large statements
+                'suggestion': 'Add JOIN condition or use LIMIT in CTEs' # suggestions to fix the issue
             },
             {
                 'name': 'LARGE_GENERATE_SERIES',
-                'pattern': r'generate_series\s*\(\s*\d+\s*,\s*(\d+)',
+                'pattern': r'generate_series\s*\(\s*\d+\s*,\s*(\d+)',#
                 'severity': 'HIGH',
-                'description': 'Large generate_series creates many rows in memory',
+                'description': 'Large generate_series creates many rows in memory',#
                 'impact_template': 'Generates {0} rows',
                 'suggestion': 'Reduce series size or use indexed table instead'
             },
@@ -107,6 +116,14 @@ class BottleneckDetector:
                 'description': 'Function on column prevents index usage',
                 'impact_template': 'Index on column cannot be used',
                 'suggestion': 'Move function to right side or create expression index'
+            },
+            {
+                'name': 'LARGE_CTE_OUTPUT',
+                'pattern': r'AS\s*\(\s*SELECT.*?\)',
+                'severity': 'MEDIUM',
+                'description': 'CTE output may be large, slowing down downstream JOINs',
+                'impact_template': 'Intermediate result set size unclear',
+                'suggestion': 'Add LIMIT inside the CTE for ultra-fast performance'
             }
         ]
     
