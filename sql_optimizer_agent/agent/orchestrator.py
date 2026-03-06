@@ -97,11 +97,9 @@ class AgentOrchestrator:
         if llm_analysis and 'optimized_query' in llm_analysis:
             # Prefer the AI-generated query if available
             optimized_query = llm_analysis['optimized_query']
-        elif suggestions:
-            # Fall back to statically applying the rule-based formatting modifications
-            optimized_query = self.rewriter.apply_suggestions(query, suggestions)
         else:
-            # If no suggestions exist, run an aggressive rewrite to enforce limits
+            # Always start by applying suggestion-based rewrites, then layer
+            # aggressive transforms (range reduction, recursion capping) on top
             optimized_query = self.rewriter.create_optimized_query(
                 query, suggestions, aggressive=True
             )
@@ -112,13 +110,10 @@ class AgentOrchestrator:
             print(f"WARNING: Optimized query failed syntax validation: {validation.errors}")
             # Fall back to rule-based rewriter output instead of invalid LLM query
             if llm_analysis and 'optimized_query' in llm_analysis:
-                # LLM query was invalid — try rule-based fallback
-                if suggestions:
-                    fallback_query = self.rewriter.apply_suggestions(query, suggestions)
-                else:
-                    fallback_query = self.rewriter.create_optimized_query(
-                        query, suggestions, aggressive=True
-                    )
+                # LLM query was invalid — try rule-based fallback with aggressive transforms
+                fallback_query = self.rewriter.create_optimized_query(
+                    query, suggestions, aggressive=True
+                )
                 # Validate the fallback too
                 fallback_validation = self.syntax_validator.validate(fallback_query)
                 if fallback_validation.is_valid:

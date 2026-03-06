@@ -38,3 +38,11 @@ INFO:     10.10.90.94:49862 - "POST /analyze HTTP/1.1" 200 OK
 WARNING: Optimized query failed syntax validation: ['PostgreSQL syntax validation failed: syntax error at or near "LIMIT"\nLINE 3: SELECT COUNT(* LIMIT 500) \n                       ^']
 WARNING: Rule-based query failed validation. Returning original query.
 INFO:     10.10.90.94:49870 - "POST /analyze HTTP/1.1" 200 OK
+INFO:     10.10.90.94:51496 - "POST /analyze HTTP/1.1" 200 OK
+INFO:     10.10.90.94:51500 - "POST /analyze HTTP/1.1" 200 OK
+WARNING: Optimized query failed syntax validation: ['PostgreSQL syntax validation failed: syntax error at or near "LIMIT"\nLINE 6: (SELECT COUNT(* LIMIT 500)\n                        ^']
+WARNING: Rule-based query failed validation. Returning original query.
+INFO:     10.10.90.94:49404 - "POST /analyze HTTP/1.1" 200 OK
+WARNING: Optimized query failed syntax validation: ['PostgreSQL syntax validation failed: syntax error at or near "LIMIT"\nLINE 6: (SELECT COUNT(* LIMIT 500)\n                        ^']
+WARNING: Rule-based query failed validation. Returning original query.
+INFO:     10.10.90.94:49408 - "POST /analyze HTTP/1.1" 200 OK

@@ -119,7 +119,7 @@ class BottleneckDetector:
             },
             {
                 'name': 'LARGE_CTE_OUTPUT',
-                'pattern': r'AS\s*\(\s*SELECT.*?\)',
+                'pattern': r'\bAS\s*\(\s*$',
                 'severity': 'MEDIUM',
                 'description': 'CTE output may be large, slowing down downstream JOINs',
                 'impact_template': 'Intermediate result set size unclear',
@@ -184,18 +184,24 @@ class BottleneckDetector:
     
     def _detect_cross_join_explosion(self, query: str, lines: List[str], 
                                      bottlenecks: List[Bottleneck]):
-        """Detect cross join with large row counts"""
+        """Detect cross join OR self-join with large row counts"""
         query_upper = query.upper()
         
-        if 'CROSS JOIN' not in query_upper:
+        # Detect both explicit CROSS JOIN and self-join patterns
+        # Self-join: JOIN ... ON ... col != col  (acts like a cross join)
+        has_cross = 'CROSS JOIN' in query_upper
+        has_self_join = bool(re.search(
+            r'JOIN\s+\w+\s+\w+\s+ON\b.*!=', query_upper, re.DOTALL
+        ))
+        
+        if not has_cross and not has_self_join:
             return
         
         # Look for WHERE clauses that define large ranges
         large_ranges = []
         for i, line in enumerate(lines, 1):
-            # Pattern: aid <= 50000 or similar
-            match = re.search(r'(\w+)\s*[<>]=?\s*(\d+)', line)
-            if match:
+            # Pattern: aid <= 50000 or similar (multiple matches on same line)
+            for match in re.finditer(r'(\w+)\s*<=?\s*(\d+)', line):
                 col, value = match.groups()
                 value = int(value)
                 if value > 1000:
@@ -205,7 +211,7 @@ class BottleneckDetector:
                         'line': i
                     })
         
-        # If we have multiple large ranges with cross join
+        # If we have multiple large ranges with cross/self join
         if len(large_ranges) >= 2:
             estimated_rows = 1
             for r in large_ranges[:2]:
@@ -216,8 +222,8 @@ class BottleneckDetector:
                     bottleneck_type='CROSS_JOIN_ROW_EXPLOSION',
                     severity='HIGH',
                     line_number=large_ranges[0]['line'],
-                    line_content=f"Cross join between ~{large_ranges[0]['value']} and ~{large_ranges[1]['value']} rows",
-                    description=f"Cross join creates ~{estimated_rows:,} row combinations",
+                    line_content=f"Self/cross join between ~{large_ranges[0]['value']} and ~{large_ranges[1]['value']} rows",
+                    description=f"Join creates ~{estimated_rows:,} row combinations",
                     impact=f"Estimated {estimated_rows:,} rows to process",
                     suggestion=f"Reduce ranges (e.g., {large_ranges[0]['column']} <= 1000) or add JOIN condition"
                 ))

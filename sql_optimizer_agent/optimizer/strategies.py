@@ -193,11 +193,37 @@ class OptimizationStrategies:
                     suggestions.append(sugg)
                 
             elif bn_type == 'LARGE_CTE_OUTPUT':
-                sugg = self._suggest_aggressive_limit(lines, bottleneck)
+                # Skip LIMIT injection for recursive CTEs (PostgreSQL disallows it)
+                if 'RECURSIVE' not in query.upper():
+                    sugg = self._suggest_aggressive_limit(lines, bottleneck)
+                    if sugg:
+                        suggestions.append(sugg)
+                        
+            elif bn_type == 'SUBQUERY_IN_SELECT':
+                sugg = self._suggest_correlated_subquery_rewrite(lines, bottleneck)
                 if sugg:
                     suggestions.append(sugg)
         
         return suggestions
+
+    def _suggest_correlated_subquery_rewrite(self, lines: List[str], 
+                                              bottleneck: Any) -> Optional[OptimizationSuggestion]:
+        """Suggest rewriting correlated subqueries to CTE + LEFT JOIN"""
+        line_num = bottleneck.line_number
+        if line_num <= 0 or line_num > len(lines):
+            return None
+        
+        line = lines[line_num - 1]
+        
+        return OptimizationSuggestion(
+            strategy_id='REWRITE_CORRELATED_SUBQUERY',
+            line_number=line_num,
+            original_content=line.strip(),
+            suggested_content="-- (Subquery extracted to CTE and joined)",
+            explanation="Correlated subquery executes for every row. Rewrite using a CTE and LEFT JOIN to perform aggregation once.",
+            expected_improvement="O(1) execution instead of O(N) per row, ~10x-100x speedup",
+            confidence=0.95
+        )
     
     def _suggest_cross_join_fix(self, query: str, lines: List[str], 
                                  bottleneck: Any) -> Optional[OptimizationSuggestion]:
@@ -294,22 +320,40 @@ class OptimizationStrategies:
     
     def _suggest_add_limit(self, lines: List[str], 
                            bottleneck: Any) -> Optional[OptimizationSuggestion]:
-        """Suggest adding LIMIT after ORDER BY, but skip if LIMIT already exists."""
+        """Suggest adding LIMIT after ORDER BY, but skip if LIMIT already exists.
+        
+        Also skips ORDER BY that is inside a window function OVER() clause,
+        even when OVER and ORDER BY are on separate lines.
+        """
         line_num = bottleneck.line_number
         if line_num <= 0 or line_num > len(lines):
             return None
         
         line = lines[line_num - 1]
         
-        # 1. Skip if part of a window function OVER clause
+        # 1. Skip if part of a window function OVER clause (same line)
         if re.search(r'OVER\s*\(\s*[^)]*ORDER\s+BY', line, re.IGNORECASE):
             return None
+        
+        # 2. Skip if inside a multi-line OVER() clause:
+        #    Look backwards for an unclosed OVER( without matching )
+        paren_depth = 0
+        for lookback_idx in range(line_num - 1, max(line_num - 15, -1), -1):
+            lb_line = lines[lookback_idx]
+            # Count parens to track depth
+            paren_depth += lb_line.count(')') - lb_line.count('(')
+            if re.search(r'OVER\s*\(', lb_line, re.IGNORECASE):
+                # Found an OVER( — if paren_depth is still < 0 (more opens than closes),
+                # we are inside the OVER clause
+                if paren_depth <= 0:
+                    return None
+                break
             
-        # 2. Skip if the current line already has LIMIT
+        # 3. Skip if the current line already has LIMIT
         if 'LIMIT' in line.upper():
             return None
             
-        # 3. Skip if the NEXT line has LIMIT (common for ORDER BY \n LIMIT)
+        # 4. Skip if the NEXT line has LIMIT (common for ORDER BY \n LIMIT)
         if line_num < len(lines):
             next_line = lines[line_num].upper()
             if 'LIMIT' in next_line:
@@ -364,50 +408,67 @@ class OptimizationStrategies:
 
     def _suggest_recursion_reduction(self, lines: List[str], 
                                      bottleneck: Any) -> Optional[OptimizationSuggestion]:
-        """Suggest reducing recursion depth"""
-        line_num = bottleneck.line_number
-        if line_num <= 0 or line_num > len(lines):
-            return None
+        """Suggest reducing recursion depth.
         
-        line = lines[line_num - 1]
-        # Look for depth < N or depth <= N
-        match = re.search(r'(\w*depth\w*)\s*([<>]=?)\s*(\d+)', line, re.IGNORECASE)
-        if match:
-            col, op, val = match.groups()
-            orig_val = int(val)
-            if orig_val > 3:
-                new_val = 3
-                new_line = line.replace(val, str(new_val))
-                return OptimizationSuggestion(
-                    strategy_id='REDUCE_RECURSION_DEPTH',
-                    line_number=line_num,
-                    original_content=line.strip(),
-                    suggested_content=new_line.strip(),
-                    explanation=f"Reduce recursion depth from {orig_val} to {new_val}. "
-                               "Recursion complexity grows exponentially with depth.",
-                    expected_improvement=f"Significant speedup (depth capped at {new_val})",
-                    confidence=0.95
-                )
+        Scans ALL lines for a depth condition (e.g., chain_depth < 6)
+        since the RECURSIVE_CTE bottleneck is reported on the WITH line,
+        not the line with the depth check.
+        """
+        # Search every line for a depth-like variable (depth, chain_depth, level, etc.)
+        depth_pattern = re.compile(
+            r'(\w*(?:depth|level|iteration)\w*)\s*([<>]=?)\s*(\d+)', re.IGNORECASE
+        )
+        for i, line in enumerate(lines, 1):
+            match = depth_pattern.search(line)
+            if match:
+                col, op, val = match.groups()
+                orig_val = int(val)
+                if orig_val > 3:
+                    new_val = 3
+                    new_line = line.replace(val, str(new_val))
+                    return OptimizationSuggestion(
+                        strategy_id='REDUCE_RECURSION_DEPTH',
+                        line_number=i,
+                        original_content=line.strip(),
+                        suggested_content=new_line.strip(),
+                        explanation=f"Reduce recursion depth from {orig_val} to {new_val}. "
+                                   "Recursion complexity grows exponentially with depth.",
+                        expected_improvement=f"Significant speedup (depth capped at {new_val})",
+                        confidence=0.95
+                    )
         return None
 
     def _suggest_aggressive_limit(self, lines: List[str], 
                                   bottleneck: Any) -> Optional[OptimizationSuggestion]:
-        """Suggest adding a small LIMIT inside a CTE"""
-        line_num = bottleneck.line_number
-        if line_num <= 0 or line_num > len(lines):
-            return None
+        """Suggest adding a small LIMIT inside a CTE.
         
-        line = lines[line_num - 1]
-        # Only suggest if it ends a CTE (contains closing paren)
-        if ')' in line:
-            new_line = line.replace(')', ' LIMIT 1000)')
-            return OptimizationSuggestion(
-                strategy_id='AGGRESSIVE_LIMIT_CTE',
-                line_number=line_num,
-                original_content=line.strip(),
-                suggested_content=new_line.strip(),
-                explanation="Add aggressive LIMIT 1000 inside the CTE to ensure fast intermediate processing.",
-                expected_improvement="Guaranteed fast intermediate results",
-                confidence=0.9
-            )
+        Skips lines that are inside window functions, JOINs, or
+        other clauses where LIMIT would be syntactically invalid.
+        """
+        # Search forward from the bottleneck line to find the CTE closing ')'
+        start = bottleneck.line_number - 1 if bottleneck.line_number > 0 else 0
+        unsafe_keywords = ['OVER', 'PARTITION', 'ROWS ', 'RANGE ', 'ON ', 'IN (', 'BETWEEN']
+        
+        for idx in range(start, len(lines)):
+            line = lines[idx]
+            line_stripped = line.strip()
+            line_upper = line_stripped.upper()
+            
+            # Skip lines with window function / join keywords
+            if any(kw in line_upper for kw in unsafe_keywords):
+                continue
+            
+            # Look for a line that is ONLY a closing paren (CTE boundary)
+            # e.g. '),', ')' — genuinely ending a CTE body
+            if line_stripped in ('),', ')'):
+                new_line = line.replace(')', ' LIMIT 1000)')
+                return OptimizationSuggestion(
+                    strategy_id='AGGRESSIVE_LIMIT_CTE',
+                    line_number=idx + 1,
+                    original_content=line.strip(),
+                    suggested_content=new_line.strip(),
+                    explanation="Add aggressive LIMIT 1000 inside the CTE to ensure fast intermediate processing.",
+                    expected_improvement="Guaranteed fast intermediate results",
+                    confidence=0.9
+                )
         return None
