@@ -1,0 +1,8 @@
+INFO:     Started server process [2918061]
+INFO:     Waiting for application startup.
+2026-03-09 05:04:38,644 - INFO - Initializing AgentOrchestrator...
+2026-03-09 05:04:38,644 - INFO - AgentOrchestrator initialized!
+INFO:     Application startup complete.
+ERROR:    [Errno 98] error while attempting to bind on address ('0.0.0.0', 5051): address already in use
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.

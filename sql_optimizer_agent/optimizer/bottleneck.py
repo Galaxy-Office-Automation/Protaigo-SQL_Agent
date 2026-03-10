@@ -43,7 +43,7 @@ class BottleneckDetector:
                 'severity': 'HIGH', # how critical is this bottleneck 
                 'description': 'Cross join creates cartesian product (n×m rows)',
                 'impact_template': 'Multiplies row count',# too large statements
-                'suggestion': 'Add JOIN condition or use LIMIT in CTEs' # suggestions to fix the issue
+                'suggestion': 'Use Window Functions (COUNT OVER, ROW_NUMBER) to replace self-joins, or add explicit JOIN conditions' # suggestions to fix the issue
             },
             {
                 'name': 'LARGE_GENERATE_SERIES',
@@ -51,7 +51,7 @@ class BottleneckDetector:
                 'severity': 'HIGH',
                 'description': 'Large generate_series creates many rows in memory',#
                 'impact_template': 'Generates {0} rows',
-                'suggestion': 'Reduce series size or use indexed table instead'
+                'suggestion': 'Process in smaller batches or use an indexed table'
             },
             {
                 'name': 'PERCENTILE_CONT',
@@ -63,7 +63,7 @@ class BottleneckDetector:
             },
             {
                 'name': 'ORDER_BY_WITHOUT_LIMIT',
-                'pattern': r'ORDER\s+BY\s+.+?(?!.*LIMIT)',
+                'pattern': r'\bORDER\s+BY\b(?!.*LIMIT)',
                 'severity': 'MEDIUM',
                 'description': 'ORDER BY without LIMIT sorts entire result set',
                 'impact_template': 'Full sort on potentially large dataset',
@@ -75,7 +75,7 @@ class BottleneckDetector:
                 'severity': 'MEDIUM',
                 'description': 'Range filter may return large number of rows',
                 'impact_template': 'May scan large portion of table',
-                'suggestion': 'Add upper/lower bound or use indexed column'
+                'suggestion': 'Ensure columns are indexed to speed up range scans'
             },
             {
                 'name': 'STDDEV_AGGREGATION',
@@ -91,7 +91,7 @@ class BottleneckDetector:
                 'severity': 'MEDIUM',
                 'description': 'Recursive CTE may iterate many times',
                 'impact_template': 'Iteration count depends on data',
-                'suggestion': 'Add termination condition or iteration limit'
+                'suggestion': 'Add a clear termination condition (e.g., depth limit)'
             },
             {
                 'name': 'SUBQUERY_IN_SELECT',
@@ -123,7 +123,7 @@ class BottleneckDetector:
                 'severity': 'MEDIUM',
                 'description': 'CTE output may be large, slowing down downstream JOINs',
                 'impact_template': 'Intermediate result set size unclear',
-                'suggestion': 'Add LIMIT inside the CTE for ultra-fast performance'
+                'suggestion': 'Use JOINs instead of large IN clauses or filter earlier in the CTE'
             }
         ]
     
@@ -140,6 +140,11 @@ class BottleneckDetector:
             
             for rule in self.detection_rules:
                 if re.search(rule['pattern'], line_upper, re.IGNORECASE):
+                    # SAFETY: If this is an ORDER BY rule, skip if it's part of a window function OVER(...)
+                    if rule['name'] == 'ORDER_BY_WITHOUT_LIMIT':
+                        if re.search(r'OVER\s*\(', line_upper, re.IGNORECASE):
+                            continue
+                    
                     # Extract additional info for impact calculation
                     impact = rule['impact_template']
                     match = re.search(rule['pattern'], line, re.IGNORECASE)
@@ -225,7 +230,7 @@ class BottleneckDetector:
                     line_content=f"Self/cross join between ~{large_ranges[0]['value']} and ~{large_ranges[1]['value']} rows",
                     description=f"Join creates ~{estimated_rows:,} row combinations",
                     impact=f"Estimated {estimated_rows:,} rows to process",
-                    suggestion=f"Reduce ranges (e.g., {large_ranges[0]['column']} <= 1000) or add JOIN condition"
+                    suggestion=f"Add missing JOIN conditions or use more selective filters"
                 ))
     
     def get_bottleneck_summary(self, bottlenecks: List[Bottleneck]) -> Dict[str, Any]:

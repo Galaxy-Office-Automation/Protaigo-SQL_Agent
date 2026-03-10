@@ -31,8 +31,8 @@ class EquivalenceValidator:
             conn.set_session(readonly=True)
             cursor = conn.cursor()
             
-            # Set timeout for safety
-            cursor.execute("SET statement_timeout = '30s'")
+            # Set timeout for safety (keep it short so heavy queries fast-fail to heuristic checks)
+            cursor.execute("SET statement_timeout = .10s.")
             
             # Execute original query
             cursor.execute(orig_limited)
@@ -57,16 +57,16 @@ class EquivalenceValidator:
             return {
                 "valid": False,
                 "error": str(e),
-                "reason": "Query execution failed"
+                "reason": f"Query execution failed: {e}"
             }
     
     def _add_limit(self, query: str, limit: int) -> str:
-        """Add LIMIT clause if not present"""
+        """Add LIMIT clause securely via subquery"""
         query_upper = query.upper()
-        if 'LIMIT' not in query_upper:
-            query = query.rstrip().rstrip(';')
-            query = f"{query} LIMIT {limit}"
-        return query
+        # If it's already a simple limited query we could skip,
+        # but wrapping it is safer to enforce the hard limit on the outer result.
+        query = query.rstrip().rstrip(';')
+        return f"SELECT * FROM (\n{query}\n) AS wrapped_query LIMIT {limit}"
     
     def _compare_results(self, orig_results, opt_results,
                           orig_columns, opt_columns) -> Dict[str, Any]:

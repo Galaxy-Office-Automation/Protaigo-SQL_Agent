@@ -49,17 +49,28 @@ class LLMInterface:
         # Create HTTP POST request object
         req = urllib.request.Request(url, data=data, headers=headers, method='POST')
         
-        try:
-            # Execute HTTP Request, timeout after 60 seconds
-            with urllib.request.urlopen(req, timeout=60) as response:
-                # Read, decode, and parse the JSON returning from the network
-                return json.loads(response.read().decode('utf-8'))
-        except urllib.error.URLError as e:
-            # Returns gracefully wrapped error dict if URL fails (DNS, Refused)
-            return {"error": str(e)}
-        except Exception as e:
-            # Returns other errors cleanly
-            return {"error": str(e)}
+        import time
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # Execute HTTP Request, timeout after 30 seconds (reduced from 60s)
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    # Read, decode, and parse the JSON returning from the network
+                    return json.loads(response.read().decode('utf-8'))
+            except urllib.error.HTTPError as e:
+                if e.code == 429 and attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    # log or print if needed: print(f"Rate limited (429). Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+                return {"error": str(e)}
+            except urllib.error.URLError as e:
+                # Returns gracefully wrapped error dict if URL fails (DNS, Refused)
+                return {"error": str(e)}
+            except Exception as e:
+                # Returns other errors cleanly
+                return {"error": str(e)}
+        return {"error": "Max retries exceeded"}
     
     def analyze_query(self, query: str, bottlenecks: List[Any], 
                       metadata: Dict = None) -> Dict[str, Any]:
@@ -105,11 +116,51 @@ class LLMInterface:
 }}
 
 ## PostgreSQL Constraints and Performance (you MUST follow these):
-- PERFORMANCE TARGET: The optimized query MUST execute in under 10 seconds.
-- LIMIT and OFFSET are NOT allowed inside recursive CTEs (WITH RECURSIVE). Place them only in the final outer SELECT.
-- RECURSION DEPTH: Cap recursion at 3 levels (e.g., depth < 3) unless absolutely necessary for correctness.
-- AGGRESSIVE SAMPLING: If tables are large (>1M rows), use TABLESAMPLE SYSTEM (1) or aggressive WHERE filtering on indexed IDs.
-- AGGRESSIVE LIMITS: Add LIMIT 1000 to intermediate CTEs to prevent row explosion.
+- CORE REQUIREMENT: The optimized query MUST return the EXACT SAME DATA as the original. 
+- PROHIBITED: Do NOT add 'LIMIT', 'OFFSET', or 'TABLESAMPLE' unless they were already present in the original query.
+- PROHIBITED: Do NOT add or change 'WHERE' clauses in a way that filters out rows (e.g., changing 'aid <= 80000' to 'aid <= 500').
+- RECURSION DEPTH: Only cap recursion if it's a safety guard that DOES NOT change the final result set.
+
+## STRUCTURAL OPTIMIZATION HANDBOOK (Advanced Patterns):
+
+### 1. Self-Join to Window Function (O(N^2) -> O(N log N))
+**Pattern**: 
+```sql
+SELECT a1.id, count(a2.id) 
+FROM table a1 JOIN table a2 ON a1.grp = a2.grp AND a1.id != a2.id
+GROUP BY a1.id
+```
+**Optimization**: Use `COUNT(*) OVER (PARTITION BY grp) - 1`.
+**Why**: Avoids the cartesian product of the join.
+
+### 2. Correlated Subquery to LATERAL JOIN
+**Pattern**:
+```sql
+SELECT t1.id, (SELECT t2.val FROM t2 WHERE t2.ref = t1.id ORDER BY t2.ts DESC LIMIT 1)
+FROM t1
+```
+**Optimization**: `CROSS JOIN LATERAL (SELECT val FROM t2 WHERE ref = t1.id ORDER BY ts DESC LIMIT 1)`.
+**Why**: Allows the planner to choose more efficient join strategies (Hash/Merge) than simple nested loops.
+
+### 3. Redundant Sort Removal
+**Pattern**: `WITH cte AS (SELECT * FROM table ORDER BY col) SELECT * FROM cte`
+**Optimization**: Remove the `ORDER BY` inside the CTE.
+**Why**: Sorting intermediate result sets is expensive and usually ignored by the outer query.
+
+### 4. Filter Pushdown to CTE
+**Pattern**: `WITH cte AS (SELECT * FROM table) SELECT * FROM cte WHERE col = val`
+**Optimization**: Move `WHERE col = val` inside the `cte` definition.
+**Why**: Reduces the volume of data materialized or processed by downstream joins.
+
+### 5. Multi-Pass to CTE Materialization
+**Pattern**: Multiple subqueries or CTEs hitting the same large table with similar filters.
+**Optimization**: Consolidate into a single `MATERIALIZED` CTE.
+**Why**: Ensures the table is scanned only once.
+
+## FINAL CONSTRAINTS:
+- YOU MUST NOT use LIMIT/TABLESAMPLE/Range-truncation to speed up the query.
+- YOU MUST NOT return the original query if a HIGH severity bottleneck (like a self-join) is detectable. TRY a structural fix first.
+- If you can't find a speedup, focus on clarity and CTE structure.
 - Window functions cannot be nested inside aggregate functions.
 - Recursive CTEs must have exactly one UNION ALL between the base case and recursive term.
 - Ensure all parentheses are properly balanced.

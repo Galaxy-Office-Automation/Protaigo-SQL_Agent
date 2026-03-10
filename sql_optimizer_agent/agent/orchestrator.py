@@ -18,7 +18,9 @@ from optimizer.bottleneck import BottleneckDetector, Bottleneck
 from optimizer.strategies import OptimizationStrategies, OptimizationSuggestion
 from optimizer.rewriter import QueryRewriter
 from agent.llm_interface import LLMInterface
+from agent.reflection_agent import ReflectionAgent
 from validator.syntax_validator import SyntaxValidator
+from validator.equivalence import EquivalenceValidator
 
 
 @dataclass
@@ -54,8 +56,11 @@ class AgentOrchestrator:
         # Instantiate LLM interface selectively to save memory/resources if LLM is disabled
         if use_llm:
             self.llm = LLMInterface()
+            # Initialize the Reflection Agent for iterative refinement
+            self.reflection_agent = ReflectionAgent(self.llm, EquivalenceValidator())
         else:
             self.llm = None
+            self.reflection_agent = None
     
     def optimize(self, query: str) -> OptimizationResult:
         #Run the complete optimization workflow in defined sequential steps.\"\"\"
@@ -98,11 +103,21 @@ class AgentOrchestrator:
             # Prefer the AI-generated query if available
             optimized_query = llm_analysis['optimized_query']
         else:
-            # Always start by applying suggestion-based rewrites, then layer
-            # aggressive transforms (range reduction, recursion capping) on top
             optimized_query = self.rewriter.create_optimized_query(
                 query, suggestions, aggressive=True
             )
+        
+        # Step 6a: Reflection - Iterative refinement to ensure correctness and safety
+        if self.use_llm and self.reflection_agent:
+            try:
+                # Use the Reflection Agent to validate data equivalence and semantic safety
+                # We wrap this in a coarse timeout if it were async, but here we just catch exceptions
+                # The underlying LLM and Validator now have tighter timeouts (30s/20s).
+                result_query = self.reflection_agent.reflect_and_refine(query, optimized_query)
+                optimized_query = result_query
+            except Exception as e:
+                print(f"Warning: Reflection/Refinement failed: {e}. Falling back to unverified optimized query.")
+
         
         # Step 6b: Validate the optimized query for syntax correctness
         validation = self.syntax_validator.validate(optimized_query)

@@ -11,16 +11,17 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # Configure the logging format to include timestamp, severity level, and the log message
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+import os
+log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(level=getattr(logging, log_level), format="%(asctime)s - %(levelname)s - %(message)s")
 # Create a logger specifically for the API
 logger = logging.getLogger("sql_agent_api")
 
 # Add the project root directory to the python path so module imports work correctly
 sys.path.insert(0, '/home/galaxy/DB_setup/sql_optimizer_agent')
 
-import os
-# Hardcode OpenAI API Key for demonstration purposes (unsafe for production!)
-os.environ["OPENAI_API_KEY"] = "sk-proj-xyz"
+# Let the system use the actual environment variables or .env file
+# os.environ["OPENAI_API_KEY"] = "sk-proj-xyz"
 
 # Attempt to import the main components from our agent modules
 try:
@@ -95,4 +96,4 @@ async def analyze_query(request: QueryRequest):
 
 # Running the app via uvicorn if the script is executed directly
 if __name__ == "__main__":
-    uvicorn.run("api_server:app", host="0.0.0.0", port=5051, log_level="info")
+    uvicorn.run("api_server:app", host="0.0.0.0", port=5051, log_level=log_level.lower())

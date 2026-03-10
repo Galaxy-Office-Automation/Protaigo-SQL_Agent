@@ -1,7 +1,7 @@
 ========================================================================
   SQL OPTIMIZER AGENT — FULL END-TO-END TEST REPORT
 ========================================================================
-  Date      : 2026-03-06 01:38:17
+  Date      : 2026-03-09 06:14:40
   Threshold : optimized query must finish < 10s with 0 errors
   Mode      : Rule-based (no LLM)
   Queries   : 3
@@ -10,50 +10,47 @@
 ------------------------------------------------------------------------
   TEST: Q1_FraudDetection
 ------------------------------------------------------------------------
-  Bottlenecks detected : 8
-  Suggestions generated: 4
+  Bottlenecks detected : 7
+  Suggestions generated: 5
+  ✗  Execution error: canceling statement due to statement timeout
+
 
   CHECK                          RESULT  
   ────────────────────────────── ────────
   optimization_produced          ✓ PASS
   syntax_valid                   ✓ PASS
-  execution_no_error             ✓ PASS
-  execution_under_10s            ✓ PASS
-
-  Execution time : 2.570s
-  Rows returned  : 0
+  execution_no_error             ✗ FAIL
+  execution_under_10s            ✗ FAIL
 
 ------------------------------------------------------------------------
   TEST: Q2_WindowFunctionOverlap
 ------------------------------------------------------------------------
   Bottlenecks detected : 10
-  Suggestions generated: 4
+  Suggestions generated: 3
+  ✗  Execution error: canceling statement due to statement timeout
+
 
   CHECK                          RESULT  
   ────────────────────────────── ────────
   optimization_produced          ✓ PASS
   syntax_valid                   ✓ PASS
-  execution_no_error             ✓ PASS
-  execution_under_10s            ✓ PASS
-
-  Execution time : 0.005s
-  Rows returned  : 0
+  execution_no_error             ✗ FAIL
+  execution_under_10s            ✗ FAIL
 
 ------------------------------------------------------------------------
   TEST: Q3_RecursiveCTE
 ------------------------------------------------------------------------
   Bottlenecks detected : 5
-  Suggestions generated: 1
+  Suggestions generated: 3
+  ✗  Execution error: canceling statement due to statement timeout
+
 
   CHECK                          RESULT  
   ────────────────────────────── ────────
   optimization_produced          ✓ PASS
   syntax_valid                   ✓ PASS
-  execution_no_error             ✓ PASS
-  execution_under_10s            ✓ PASS
-
-  Execution time : 0.002s
-  Rows returned  : 0
+  execution_no_error             ✗ FAIL
+  execution_under_10s            ✗ FAIL
 
 ========================================================================
   SUMMARY
@@ -61,10 +58,10 @@
 
   QUERY                          OPT    SYN    EXEC   <10s       TIME
   ────────────────────────────── ────── ────── ────── ────── ────────
-  Q1_FraudDetection              ✓      ✓      ✓      ✓        2.570s
-  Q2_WindowFunctionOverlap       ✓      ✓      ✓      ✓        0.005s
-  Q3_RecursiveCTE                ✓      ✓      ✓      ✓        0.002s
+  Q1_FraudDetection              ✓      ✓      ✗      ✗           N/A
+  Q2_WindowFunctionOverlap       ✓      ✓      ✗      ✗           N/A
+  Q3_RecursiveCTE                ✓      ✓      ✗      ✗           N/A
 
-  ✅ OVERALL RESULT: ALL TESTS PASSED
+  ❌ OVERALL RESULT: SOME TESTS FAILED
 
 ========================================================================

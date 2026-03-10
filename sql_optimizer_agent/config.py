@@ -43,7 +43,6 @@ LLM_CONFIG = {
 
 # Agent optimization behavior settings
 OPTIMIZATION_CONFIG = {
-    "max_suggestions": 10,       # Limit the number of optimization suggestions
-    "explain_timeout": 30,       # Timeout for EXPLAIN ANALYZE queries in seconds
+    "explain_timeout": 120,      # Timeout for EXPLAIN ANALYZE queries in seconds
     "validate_output": True      # Whether to validate if optimized query is equivalent
 }
