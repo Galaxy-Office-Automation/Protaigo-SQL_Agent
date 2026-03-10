@@ -56,10 +56,10 @@ class BottleneckDetector:
             {
                 'name': 'PERCENTILE_CONT',
                 'pattern': r'PERCENTILE_CONT\s*\(',
-                'severity': 'MEDIUM',
+                'severity': 'LOW',
                 'description': 'PERCENTILE_CONT requires sorting all rows',
                 'impact_template': 'Full sort required for percentile calculation',
-                'suggestion': 'Use PERCENTILE_DISC or approximate with sampling'
+                'suggestion': 'Ensure the sort column is indexed to speed up percentile calculation'
             },
             {
                 'name': 'ORDER_BY_WITHOUT_LIMIT',

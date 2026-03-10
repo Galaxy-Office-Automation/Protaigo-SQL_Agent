@@ -14,10 +14,22 @@ class QueryRewriter:
         lines = query.split('\n')
         sorted_suggestions = sorted(suggestions, key=lambda s: s.line_number, reverse=True)
         
+        # Keywords that mark data-critical SQL clauses which must never be
+        # replaced with comments — doing so would silently change the result set.
+        _PROTECTED_KEYWORDS = ('WHERE', 'AND ', 'AND(', 'OR ', 'OR(', 
+                               'HAVING', 'FROM ', 'JOIN ', 'ON ')
+        
         for suggestion in sorted_suggestions:
             if 0 < suggestion.line_number <= len(lines):
                 idx = suggestion.line_number - 1
                 original = lines[idx].strip()
+                
+                # Safety: never replace data-critical lines with comments
+                if suggestion.suggested_content.lstrip().startswith('--'):
+                    original_upper = original.upper().lstrip()
+                    if any(original_upper.startswith(kw) for kw in _PROTECTED_KEYWORDS):
+                        continue
+                
                 if self._lines_match(original, suggestion.original_content):
                     indent = len(lines[idx]) - len(lines[idx].lstrip())
                     lines[idx] = ' ' * indent + suggestion.suggested_content
@@ -29,9 +41,6 @@ class QueryRewriter:
         normalize = lambda s: ' '.join(s.split())
         return normalize(line1) == normalize(line2)
     
-    def remove_percentile_cont(self, query: str) -> str:
-        """Replace PERCENTILE_CONT with PERCENTILE_DISC"""
-        return re.sub(r'PERCENTILE_CONT', 'PERCENTILE_DISC', query, flags=re.IGNORECASE)
 
     def rewrite_correlated_subqueries(self, query: str) -> str:
         """Rewrite correlated subqueries in SELECT to CTE + LEFT JOIN.
@@ -203,7 +212,6 @@ class QueryRewriter:
     def create_optimized_query(self, query: str, suggestions: List, aggressive: bool = False) -> str:
         """Create an optimized version of the query"""
         optimized = self.apply_suggestions(query, suggestions)
-        # Structural structural optimizations (always equivalent)
+        # Structural optimizations (always equivalent)
         optimized = self.rewrite_correlated_subqueries(optimized)
-        optimized = self.remove_percentile_cont(optimized)
         return optimized

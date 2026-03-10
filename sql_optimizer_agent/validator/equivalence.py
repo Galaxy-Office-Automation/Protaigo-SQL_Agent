@@ -61,12 +61,17 @@ class EquivalenceValidator:
             }
     
     def _add_limit(self, query: str, limit: int) -> str:
-        """Add LIMIT clause securely via subquery"""
-        query_upper = query.upper()
-        # If it's already a simple limited query we could skip,
-        # but wrapping it is safer to enforce the hard limit on the outer result.
+        """Add LIMIT clause securely via subquery with deterministic ordering.
+        
+        Uses ORDER BY on ordinal column positions so both the original and
+        optimized queries always return the exact same subset of rows,
+        regardless of differences in their execution plans.
+        """
         query = query.rstrip().rstrip(';')
-        return f"SELECT * FROM (\n{query}\n) AS wrapped_query LIMIT {limit}"
+        return (
+            f"SELECT * FROM (\n{query}\n) AS wrapped_query "
+            f"ORDER BY 1,2,3,4,5,6,7,8,9,10 LIMIT {limit}"
+        )
     
     def _compare_results(self, orig_results, opt_results,
                           orig_columns, opt_columns) -> Dict[str, Any]:

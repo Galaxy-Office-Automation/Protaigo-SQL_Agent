@@ -1,0 +1,27 @@
+INFO:     Started server process [3055759]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:5051 (Press CTRL+C to quit)
+LLM Reflection Request failed: HTTP Error 429: Too Many Requests
+Reflection flagged issue: LLM response error: HTTP Error 429: Too Many Requests
+LLM Refinement Request failed: HTTP Error 429: Too Many Requests
+LLM Reflection Request failed: HTTP Error 429: Too Many Requests
+Reflection flagged issue: LLM response error: HTTP Error 429: Too Many Requests
+LLM Refinement Request failed: HTTP Error 429: Too Many Requests
+LLM Reflection Request failed: HTTP Error 429: Too Many Requests
+Reflection flagged issue: LLM response error: HTTP Error 429: Too Many Requests
+LLM Refinement Request failed: HTTP Error 429: Too Many Requests
+Max retries reached in reflection loop without finding an equivalent query. Falling back to original query.
+LLM Reflection Request failed: HTTP Error 429: Too Many Requests
+Reflection flagged issue: LLM response error: HTTP Error 429: Too Many Requests
+LLM Refinement Request failed: HTTP Error 429: Too Many Requests
+LLM Reflection Request failed: HTTP Error 429: Too Many Requests
+Reflection flagged issue: LLM response error: HTTP Error 429: Too Many Requests
+LLM Refinement Request failed: HTTP Error 429: Too Many Requests
+LLM Reflection Request failed: HTTP Error 429: Too Many Requests
+Reflection flagged issue: LLM response error: HTTP Error 429: Too Many Requests
+LLM Refinement Request failed: HTTP Error 429: Too Many Requests
+Max retries reached in reflection loop without finding an equivalent query. Falling back to original query.
+Initializing Agent Orchestrator... (this takes ~16s but only happens ONCE)
+Agent Ready!
+INFO:     10.10.90.94:37304 - "POST /analyze HTTP/1.1" 200 OK

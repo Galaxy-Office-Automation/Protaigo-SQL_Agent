@@ -119,6 +119,7 @@ class LLMInterface:
 - CORE REQUIREMENT: The optimized query MUST return the EXACT SAME DATA as the original. 
 - PROHIBITED: Do NOT add 'LIMIT', 'OFFSET', or 'TABLESAMPLE' unless they were already present in the original query.
 - PROHIBITED: Do NOT add or change 'WHERE' clauses in a way that filters out rows (e.g., changing 'aid <= 80000' to 'aid <= 500').
+- PROHIBITED: Do NOT replace PERCENTILE_CONT with PERCENTILE_DISC. They produce mathematically different results and are NOT interchangeable.
 - RECURSION DEPTH: Only cap recursion if it's a safety guard that DOES NOT change the final result set.
 
 ## STRUCTURAL OPTIMIZATION HANDBOOK (Advanced Patterns):

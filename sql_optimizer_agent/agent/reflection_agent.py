@@ -231,5 +231,9 @@ Provide a REFINED version of the optimized query that:
         elif not orig_matches and opt_matches:
             # If we added an ID filter that wasn't there
             return True
+
+        # 3. PERCENTILE_CONT must never be swapped to PERCENTILE_DISC
+        if 'PERCENTILE_DISC' in opt_upper and 'PERCENTILE_DISC' not in orig_upper:
+            return True
             
         return False

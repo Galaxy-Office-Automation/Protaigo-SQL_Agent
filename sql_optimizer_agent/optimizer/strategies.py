@@ -63,14 +63,7 @@ class OptimizationStrategies:
                 transformation='Replace generate_series with a pre-populated numbers table',
                 expected_improvement='Disk-backed or indexed access'
             ),
-            OptimizationStrategy(
-                strategy_id='REPLACE_PERCENTILE',
-                name='Replace PERCENTILE_CONT',
-                applies_to=['PERCENTILE_CONT'],
-                description='Use PERCENTILE_DISC or approximate method',
-                transformation='Replace PERCENTILE_CONT with PERCENTILE_DISC',
-                expected_improvement='Faster approximation with minimal accuracy loss'
-            ),
+
             OptimizationStrategy(
                 strategy_id='ADD_WHERE_BOUND',
                 name='Add Range Bounds',
@@ -162,7 +155,12 @@ class OptimizationStrategies:
 
     def _suggest_window_function_replacement(self, query: str, lines: List[str], 
                                            bottleneck: Any) -> Optional[OptimizationSuggestion]:
-        """Suggest replacing self-join with window function."""
+        """Suggest replacing self-join with window function.
+        
+        This is advisory-only (line_number=0) because the rewrite is structural
+        and cannot be safely done via simple line replacement. The LLM handles
+        the actual rewrite when enabled.
+        """
         line_num = bottleneck.line_number
         if line_num <= 0: return None
         
@@ -170,10 +168,10 @@ class OptimizationStrategies:
         
         return OptimizationSuggestion(
             strategy_id='SELF_JOIN_TO_WINDOW',
-            line_number=line_num,
+            line_number=0,  # Advisory only - do NOT replace any line
             original_content=line.strip(),
-            suggested_content="-- (Rewrite self-join using Window Function COUNT(*) OVER)",
-            explanation="This self-join for peer/group comparison creates a cartesian product. Use Window Functions like COUNT(*) OVER (PARTITION BY ...) or ROW_NUMBER() to achieve the same result in a single scan.",
+            suggested_content="-- Requires structural rewrite: use Window Function COUNT(*) OVER instead of self-join",
+            explanation="This self-join for peer/group comparison creates a cartesian product. Use Window Functions like COUNT(*) OVER (PARTITION BY ...) or ROW_NUMBER() to achieve the same result in a single scan. This optimization requires a structural rewrite and cannot be applied as a simple line replacement.",
             expected_improvement="O(N^2) to O(N log N) speedup",
             confidence=0.85
         )
@@ -186,8 +184,16 @@ class OptimizationStrategies:
         
         line = lines[line_num - 1]
         
-        # Skip if part of a window function or contains window logic
-        if re.search(r'\bOVER\s*\(', line, re.IGNORECASE) or 'PARTITION' in line.upper():
+        # Context check: are we inside a multi-line window function?
+        # Look backwards a few lines for 'OVER' or 'PARTITION'
+        is_window = False
+        start_idx = max(0, line_num - 5)
+        for i in range(start_idx, line_num):
+            if re.search(r'\bOVER\s*\(', lines[i], re.IGNORECASE) or 'PARTITION' in lines[i].upper():
+                is_window = True
+                break
+                
+        if is_window or re.search(r'\bOVER\s*\(', line, re.IGNORECASE) or 'PARTITION' in line.upper():
             return None
             
         # Check if we are inside a CTE (approximate check)
@@ -224,12 +230,23 @@ class OptimizationStrategies:
 
     def _suggest_materialization(self, lines: List[str], 
                                   bottleneck: Any) -> Optional[OptimizationSuggestion]:
-        """Suggest adding a MATERIALIZED hint to a CTE."""
+        """Suggest adding a MATERIALIZED hint to a CTE.
+        
+        Skips recursive CTEs where MATERIALIZED is not valid PostgreSQL.
+        Preserves original case of CTE names.
+        """
         start = bottleneck.line_number - 1 if bottleneck.line_number > 0 else 0
         for idx in range(start, len(lines)):
             line = lines[idx]
             if 'AS (' in line.upper():
-                new_line = line.upper().replace('AS (', 'AS MATERIALIZED (')
+                # Skip recursive CTEs - MATERIALIZED is not valid on them in PostgreSQL
+                if 'RECURSIVE' in line.upper():
+                    return None
+                if idx > 0 and 'RECURSIVE' in lines[idx - 1].upper():
+                    return None
+                
+                # Preserve original case - only inject MATERIALIZED keyword
+                new_line = re.sub(r'\bAS\s*\(', 'AS MATERIALIZED (', line, count=1, flags=re.IGNORECASE)
                 return OptimizationSuggestion(
                     strategy_id='MATERIALIZE_CTE',
                     line_number=idx + 1,
