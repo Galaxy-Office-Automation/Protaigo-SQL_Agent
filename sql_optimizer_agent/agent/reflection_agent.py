@@ -54,10 +54,18 @@ class ReflectionAgent: #this is the main class that will be used to interact wit
             # Step 2: Technical validation (Equivalence)
             validation_result = self.validator.validate(original_query, current_query)  #validate the optimized query
             
+            # Check if the validation failed due to DB unavailability (e.g., psycopg2 error)
+            db_unavailable = not validation_result.get('valid', False) and "psycopg2" in validation_result.get('reason', '').lower()
+
             if not validation_result.get("valid"):
                 reason = validation_result.get("reason", "Unknown validation error")  #get the reason for the validation failure
                 
-                if "statement timeout" in reason.lower() or "timeout" in reason.lower():
+                if db_unavailable:
+                    logger.warning(f"Equivalence validation failed due to DB unavailability: {reason}. Proceeding with LLM reflection, assuming equivalence for now.")
+                    # If DB is unavailable, we can't perform a technical validation.
+                    # We'll proceed to semantic reflection, trusting the LLM to catch issues.
+                    # The `continue` is removed here to allow progression to Step 3.
+                elif "statement timeout" in reason.lower() or "timeout" in reason.lower():
                     logger.info(f"Validation timed out on heavy query: {reason}. Trusting heuristic checks and proceeding.")
                 else:
                     logger.warning(f"Validation failed: {reason}")

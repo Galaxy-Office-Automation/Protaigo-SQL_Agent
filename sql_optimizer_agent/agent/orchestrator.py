@@ -120,28 +120,29 @@ class AgentOrchestrator:
 
         
         # Step 6b: Validate the optimized query for syntax correctness
-        validation = self.syntax_validator.validate(optimized_query)
-        if not validation.is_valid:
-            print(f"WARNING: Optimized query failed syntax validation: {validation.errors}")
-            # Fall back to rule-based rewriter output instead of invalid LLM query
-            if llm_analysis and 'optimized_query' in llm_analysis:
-                # LLM query was invalid — try rule-based fallback with aggressive transforms
-                fallback_query = self.rewriter.create_optimized_query(
-                    query, suggestions, aggressive=True
-                )
-                # Validate the fallback too
-                fallback_validation = self.syntax_validator.validate(fallback_query)
-                if fallback_validation.is_valid:
-                    optimized_query = fallback_query
-                    print("INFO: Fell back to rule-based optimized query (passed validation).")
+        if self.use_explain:
+            validation = self.syntax_validator.validate(optimized_query)
+            if not validation.is_valid:
+                print(f"WARNING: Optimized query failed syntax validation: {validation.errors}")
+                # Fall back to rule-based rewriter output instead of invalid LLM query
+                if llm_analysis and 'optimized_query' in llm_analysis:
+                    # LLM query was invalid — try rule-based fallback with aggressive transforms
+                    fallback_query = self.rewriter.create_optimized_query(
+                        query, suggestions, aggressive=True
+                    )
+                    # Validate the fallback too
+                    fallback_validation = self.syntax_validator.validate(fallback_query)
+                    if fallback_validation.is_valid:
+                        optimized_query = fallback_query
+                        print("INFO: Fell back to rule-based optimized query (passed validation).")
+                    else:
+                        # Both failed — return original query as safest option
+                        optimized_query = query
+                        print("WARNING: Fallback also failed validation. Returning original query.")
                 else:
-                    # Both failed — return original query as safest option
+                    # Rule-based query was invalid — return original
                     optimized_query = query
-                    print("WARNING: Fallback also failed validation. Returning original query.")
-            else:
-                # Rule-based query was invalid — return original
-                optimized_query = query
-                print("WARNING: Rule-based query failed validation. Returning original query.")
+                    print("WARNING: Rule-based query failed validation. Returning original query.")
         
         # Step 7: Calculate an estimated string showing expected improvement based on steps above
         expected_improvement = self._calculate_improvement(

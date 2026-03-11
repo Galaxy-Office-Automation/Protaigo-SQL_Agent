@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Protaigo SQL Agent System Testing</title>
+    <!-- Use Tailwind for sleek, modern, dynamic design -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel to compile JSX on the fly -->
+    <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        .animate-pulse-slow {
+            animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #1e293b;
+            border-radius: 4px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+    </style>
+</head>
+
+<body class="min-h-screen p-6">
+    <div id="root"></div>
+
+    <!-- The React App (compiled by Babel) -->
+    <script type="text/babel" data-type="module">
+        const { useState } = React;
+
+        const App = () => {
+            const [query, setQuery] = useState('WITH account_data AS (\n  SELECT *\n  FROM pgbench_accounts\n  WHERE aid <= 50000\n)\nSELECT *\nFROM account_data\nORDER BY abalance DESC;\n');
+            const [status, setStatus] = useState('idle'); // idle, loading, success, error
+            const [result, setResult] = useState(null);
+            const [errorMsg, setErrorMsg] = useState('');
+            const [compareStatus, setCompareStatus] = useState('idle'); // idle, loading, done, error
+            const [compareResult, setCompareResult] = useState(null);
+            const [compareError, setCompareError] = useState('');
+
+            const handleCompare = async () => {
+                if (!result || !result.optimized_query) return;
+                setCompareStatus('loading');
+                setCompareResult(null);
+                setCompareError('');
+                try {
+                    const apiUrl = window.location.protocol + '//' + window.location.hostname + ':5051/compare';
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ original_query: query, optimized_query: result.optimized_query })
+                    });
+                    const rawData = await response.json();
+                    const data = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
+                    if (data.error) throw new Error(data.error);
+                    setCompareResult(data);
+                    setCompareStatus('done');
+                } catch (err) {
+                    setCompareError(err.message);
+                    setCompareStatus('error');
+                }
+            };
+
+            const handleAnalyze = async () => {
+                if (!query.trim()) return;
+                setCompareStatus('idle');
+                setCompareResult(null);
+
+                setStatus('loading');
+                setResult(null);
+                setErrorMsg('');
+
+                try {
+                    // Make request to the FastAPI server running on port 5051 on the very same host IP
+                    const apiUrl = window.location.protocol + '//' + window.location.hostname + ':5051/analyze';
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ query: query })
+                    });
+
+                    const rawData = await response.json();
+
+                    // The backend returns a JSON-encoded string, so we must parse it again if necessary
+                    const data = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
+
+                    if (!response.ok || data.error) {
+                        throw new Error(data.error || 'Optimization failed');
+                    }
+
+                    setResult(data);
+                    setStatus('success');
+                } catch (err) {
+                    console.error(err);
+                    setErrorMsg(err.message || 'Failed to connect to the Protaigo SQL Agent. Is the server running on port 5051?');
+                    setStatus('error');
+                }
+            };
+
+            return (
+                <div class="max-w-7xl mx-auto flex flex-col h-[90vh] gap-6">
+                    {/* Header */}
+                    <header class="flex items-center justify-between glass-panel p-6 rounded-2xl">
+                        <div>
+                            <h1 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400 tracking-tight">
+                                Protaigo SQL Agent
+                            </h1>
+                            <p class="text-slate-400 mt-1 text-sm font-medium">System Testing Interface</p>
+                        </div>
+                        <div class="flex items-center gap-3 bg-slate-800/50 px-4 py-2 rounded-full border border-slate-700">
+                            <div class={`w-3 h-3 rounded-full ${status === 'loading' ? 'bg-amber-400 animate-pulse-slow' : status === 'success' ? 'bg-emerald-500' : 'bg-blue-500'}`}></div>
+                            <span class="text-sm font-medium text-slate-300">
+                                {status === 'loading' ? 'Analyzing Query...' : status === 'success' ? 'Optimization Complete' : 'System Ready'}
+                            </span>
+                        </div>
+                    </header>
+
+                    {/* Main Content Area */}
+                    <main class="flex-1 flex gap-6 min-h-0">
+
+                        {/* Left Side: Input */}
+                        <div class="w-1/2 flex flex-col gap-4">
+                            <div class="glass-panel rounded-2xl p-5 flex-1 flex flex-col">
+                                <label class="text-sm font-semibold text-slate-300 mb-3 flex items-center justify-between">
+                                    <span>Input SQL Query</span>
+                                    <span class="px-2 py-1 bg-slate-800 rounded text-xs text-slate-400 font-mono">PostgreSQL</span>
+                                </label>
+                                <textarea
+                                    class="w-full flex-1 bg-slate-900/50 text-emerald-300 font-mono p-4 rounded-xl border border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none resize-none custom-scrollbar transition-all"
+                                    value={query}
+                                    onChange={(e) => setQuery(e.target.value)}
+                                    placeholder="Paste your slow SQL query here..."
+                                    spellCheck="false"
+                                ></textarea>
+                            </div>
+
+                            <button
+                                onClick={handleAnalyze}
+                                disabled={status === 'loading' || !query.trim()}
+                                class="w-full py-4 rounded-2xl font-bold text-white shadow-lg transition-all transform hover:-translate-y-1 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500"
+                            >
+                                {status === 'loading' ? (
+                                    <span class="flex items-center justify-center gap-2">
+                                        <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                        Analyzing Bottlenecks...
+                                    </span>
+                                ) : 'Optimize Query'}
+                            </button>
+                        </div>
+
+                        {/* Right Side: Output */}
+                        <div class="w-1/2 glass-panel rounded-2xl flex flex-col p-5 overflow-hidden">
+                            <h2 class="text-sm font-semibold text-slate-300 mb-4 flex justify-between items-center pb-3 border-b border-slate-700/50">
+                                <span>Agent Output</span>
+                            </h2>
+
+                            <div class="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-2">
+                                {status === 'idle' && (
+                                    <div class="h-full flex flex-col items-center justify-center text-slate-500">
+                                        <svg class="w-16 h-16 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                                        <p>Run the agent to see AI optimizations</p>
+                                    </div>
+                                )}
+
+                                {status === 'loading' && (
+                                    <div class="h-full flex flex-col items-center justify-center text-blue-400">
+                                        <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                                        <p class="animate-pulse">The Agent is thinking...</p>
+                                        <p class="text-xs text-slate-500 mt-2">Checking syntax, detecting bottlenecks, and testing rules...</p>
+                                    </div>
+                                )}
+
+                                {status === 'error' && (
+                                    <div class="bg-red-500/10 border border-red-500/20 p-4 rounded-xl text-red-400 text-sm">
+                                        <div class="flex items-center gap-2 mb-2 font-bold">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                            Error Connecting to Agent
+                                        </div>
+                                        {errorMsg}
+                                    </div>
+                                )}
+
+                                {status === 'success' && result && (
+                                    <div class="space-y-5 animate-fade-in">
+
+                                        {/* Summary Card */}
+                                        <div class="p-4 rounded-xl bg-gradient-to-br from-blue-900/40 to-indigo-900/30 border border-blue-500/20">
+                                            <div class="flex items-start justify-between mb-2">
+                                                <h3 class="text-xs font-bold text-blue-400 uppercase tracking-wider">What the Agent Did</h3>
+                                                {(result.expected_improvement || (result.llm_analysis && result.llm_analysis.expected_speedup)) && (
+                                                    <span class="bg-emerald-500/20 text-emerald-400 px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap">
+                                                        ⚡ {result.expected_improvement || result.llm_analysis.expected_speedup}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p class="text-sm text-slate-300 leading-relaxed">
+                                                {result.llm_analysis ? (result.llm_analysis.non_technical_summary || result.llm_analysis.analysis) : "The rule engine applied structural SQL optimizations to your query."}
+                                            </p>
+                                        </div>
+
+                                        {/* Detected Bottlenecks & How We Fixed Them */}
+                                        {result.bottlenecks && result.bottlenecks.length > 0 && (
+                                            <div>
+                                                <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Detected Bottlenecks & How We Fixed Them</h3>
+                                                <div class="space-y-3">
+                                                    {result.bottlenecks.map((b, idx) => (
+                                                        <div key={idx} class="bg-slate-800/40 border border-slate-700/50 p-4 rounded-xl">
+                                                            <div class="flex items-center gap-2 mb-2">
+                                                                <span class={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${b.severity === 'HIGH' ? 'bg-red-500/20 text-red-400' :
+                                                                    b.severity === 'MEDIUM' ? 'bg-amber-500/20 text-amber-400' :
+                                                                        'bg-slate-500/20 text-slate-400'
+                                                                    }`}>{b.severity}</span>
+                                                                <span class="text-xs font-semibold text-slate-400">Line {b.line}</span>
+                                                                <span class="text-xs bg-slate-700/50 text-slate-300 px-2 py-0.5 rounded font-mono">{b.type}</span>
+                                                            </div>
+                                                            <p class="text-sm text-slate-300 mb-2">{b.description}</p>
+                                                            <div class="flex gap-3 mt-2">
+                                                                <div class="flex-1 bg-red-500/5 p-2 rounded border border-red-500/10">
+                                                                    <div class="text-[10px] text-red-400 font-bold uppercase mb-1">⏱ Performance Impact</div>
+                                                                    <p class="text-xs text-red-300">{b.impact}</p>
+                                                                </div>
+                                                                <div class="flex-1 bg-emerald-500/5 p-2 rounded border border-emerald-500/10">
+                                                                    <div class="text-[10px] text-emerald-400 font-bold uppercase mb-1">✅ Our Fix</div>
+                                                                    <p class="text-xs text-emerald-300">{b.suggestion}</p>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Optimized SQL */}
+                                        <div>
+                                            <div class="flex items-center justify-between mb-2">
+                                                <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider">Optimized SQL</h3>
+                                                <button onClick={() => { navigator.clipboard.writeText(result.optimized_query); alert('Copied!') }} class="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                                                    Copy Code
+                                                </button>
+                                            </div>
+                                            <pre class="bg-slate-900 p-4 rounded-xl border border-slate-700 overflow-x-auto custom-scrollbar">
+                                                <code class="text-sm font-mono text-emerald-400">{result.optimized_query}</code>
+                                            </pre>
+                                        </div>
+
+                                        {/* Line-by-Line Changes */}
+                                        {result.suggestions && result.suggestions.length > 0 && (
+                                            <div>
+                                                <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Line-by-Line Changes</h3>
+                                                <div class="space-y-3">
+                                                    {result.suggestions.map((s, idx) => (
+                                                        <div key={idx} class="bg-slate-800/30 border border-slate-700/50 p-3 rounded-xl">
+                                                            <div class="flex items-center gap-2 mb-2">
+                                                                <span class="bg-blue-500/20 text-blue-400 text-xs px-2 py-0.5 rounded font-bold">Line {s.line}</span>
+                                                                <span class="text-sm text-slate-300 flex-1">{s.explanation}</span>
+                                                                {s.improvement && (
+                                                                    <span class="bg-emerald-500/10 text-emerald-400 text-[10px] px-2 py-0.5 rounded-full font-bold whitespace-nowrap">↑ {s.improvement}</span>
+                                                                )}
+                                                            </div>
+                                                            <div class="grid grid-cols-2 gap-2 mt-2">
+                                                                <div class="bg-red-500/5 p-2 rounded border border-red-500/10">
+                                                                    <div class="text-[10px] text-red-500 uppercase font-bold mb-1">Before</div>
+                                                                    <code class="text-xs text-red-400 font-mono break-all">{s.original}</code>
+                                                                </div>
+                                                                <div class="bg-emerald-500/5 p-2 rounded border border-emerald-500/10">
+                                                                    <div class="text-[10px] text-emerald-500 uppercase font-bold mb-1">After</div>
+                                                                    <code class="text-xs text-emerald-400 font-mono break-all">{s.suggested}</code>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Compare Button + Results */}
+                                {status === 'success' && result && result.optimized_query && (
+                                    <div class="mt-4 pt-4 border-t border-slate-700/50">
+                                        <button
+                                            onClick={handleCompare}
+                                            disabled={compareStatus === 'loading'}
+                                            class="w-full py-3 rounded-xl font-bold text-white shadow-lg transition-all transform hover:-translate-y-0.5 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-sm"
+                                        >
+                                            {compareStatus === 'loading' ? (
+                                                <span class="flex items-center justify-center gap-2">
+                                                    <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                                    Running on Live Database...
+                                                </span>
+                                            ) : '🔍 Run & Compare on Live DB'}
+                                        </button>
+
+                                        {compareStatus === 'error' && (
+                                            <div class="mt-3 bg-red-500/10 border border-red-500/20 p-3 rounded-xl text-red-400 text-sm">
+                                                <strong>DB Error:</strong> {compareError}
+                                            </div>
+                                        )}
+
+                                        {compareStatus === 'done' && compareResult && (
+                                            <div class="mt-4 space-y-4">
+                                                {/* Speedup + Equivalence Banner */}
+                                                <div class={`p-4 rounded-xl border flex items-center justify-between ${compareResult.results_match
+                                                        ? 'bg-emerald-500/10 border-emerald-500/20'
+                                                        : 'bg-amber-500/10 border-amber-500/20'
+                                                    }`}>
+                                                    <div>
+                                                        <div class="text-lg font-bold text-white flex items-center gap-2">
+                                                            ⚡ {compareResult.speedup}
+                                                        </div>
+                                                        <div class={`text-xs mt-1 font-medium ${compareResult.results_match ? 'text-emerald-400' : 'text-amber-400'
+                                                            }`}>
+                                                            {compareResult.results_match
+                                                                ? '✅ Results are identical — optimization is safe'
+                                                                : '⚠️ Results differ — review the optimized query'}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Execution Time Bars */}
+                                                <div class="space-y-2">
+                                                    <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider">Execution Time (ms)</h4>
+                                                    {[compareResult.original, compareResult.optimized].map((r, i) => {
+                                                        const maxTime = Math.max(
+                                                            compareResult.original.execution_time_ms || 1,
+                                                            compareResult.optimized.execution_time_ms || 1
+                                                        );
+                                                        const pct = Math.max(5, (r.execution_time_ms / maxTime) * 100);
+                                                        return (
+                                                            <div key={i}>
+                                                                <div class="flex justify-between text-xs mb-1">
+                                                                    <span class={i === 0 ? 'text-red-400' : 'text-emerald-400'}>{r.label}</span>
+                                                                    <span class="text-slate-400 font-mono">
+                                                                        {r.error ? 'Timed out / Error' : `${r.execution_time_ms.toFixed(1)} ms`}
+                                                                    </span>
+                                                                </div>
+                                                                <div class="w-full bg-slate-800 rounded-full h-3">
+                                                                    <div
+                                                                        class={`h-3 rounded-full transition-all duration-700 ${i === 0 ? 'bg-red-500/70' : 'bg-emerald-500/70'}`}
+                                                                        style={{ width: `${r.error ? 100 : pct}%` }}
+                                                                    ></div>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+
+                                                {/* Sample Rows */}
+                                                {compareResult.optimized.sample_rows && compareResult.optimized.sample_rows.length > 0 && (
+                                                    <div>
+                                                        <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Sample Output (first {compareResult.optimized.row_count} rows)</h4>
+                                                        <div class="overflow-x-auto custom-scrollbar">
+                                                            <table class="min-w-full text-xs font-mono">
+                                                                <thead>
+                                                                    <tr class="border-b border-slate-700">
+                                                                        {compareResult.optimized.columns.map((col, ci) => (
+                                                                            <th key={ci} class="px-3 py-2 text-left text-slate-400 font-bold">{col}</th>
+                                                                        ))}
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    {compareResult.optimized.sample_rows.map((row, ri) => (
+                                                                        <tr key={ri} class="border-b border-slate-800 hover:bg-slate-800/30">
+                                                                            {compareResult.optimized.columns.map((col, ci) => (
+                                                                                <td key={ci} class="px-3 py-1.5 text-slate-300 max-w-[200px] truncate">{row[col]}</td>
+                                                                            ))}
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </main>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+
+</html>
