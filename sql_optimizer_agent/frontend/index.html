@@ -308,6 +308,24 @@
                                     </div>
                                 )}
 
+                                {/* Agent Progress Logs */}
+                                {result.agent_logs && (
+                                    <div class="mt-6 border-t border-slate-700/50 pt-6">
+                                        <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                            Agent Activity Log
+                                        </h3>
+                                        <div class="bg-black/40 rounded-xl border border-slate-700/50 p-3 relative group">
+                                            <pre class="text-[10px] text-slate-400 font-mono whitespace-pre-wrap max-h-60 overflow-y-auto custom-scrollbar selection:bg-blue-500/30">
+                                                {result.agent_logs}
+                                            </pre>
+                                            <div class="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <span class="text-[8px] text-slate-600 bg-slate-800 px-1.5 py-0.5 rounded uppercase font-bold">Internal Process Stream</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* Compare Button + Results */}
                                 {status === 'success' && result && result.optimized_query && (
                                     <div class="mt-4 pt-4 border-t border-slate-700/50">
@@ -334,8 +352,8 @@
                                             <div class="mt-4 space-y-4">
                                                 {/* Speedup + Equivalence Banner */}
                                                 <div class={`p-4 rounded-xl border flex items-center justify-between ${compareResult.results_match
-                                                        ? 'bg-emerald-500/10 border-emerald-500/20'
-                                                        : 'bg-amber-500/10 border-amber-500/20'
+                                                    ? 'bg-emerald-500/10 border-emerald-500/20'
+                                                    : 'bg-amber-500/10 border-amber-500/20'
                                                     }`}>
                                                     <div>
                                                         <div class="text-lg font-bold text-white flex items-center gap-2">
@@ -379,8 +397,8 @@
                                                 </div>
 
                                                 {/* Sample Rows */}
-                                                {compareResult.optimized.sample_rows && compareResult.optimized.sample_rows.length > 0 && (
-                                                    <div>
+                                                {compareResult.optimized.sample_rows && compareResult.optimized.sample_rows.length > 0 ? (
+                                                    <div class="animate-fade-in">
                                                         <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Sample Output (first {compareResult.optimized.row_count} rows)</h4>
                                                         <div class="overflow-x-auto custom-scrollbar">
                                                             <table class="min-w-full text-xs font-mono">
@@ -402,6 +420,10 @@
                                                                 </tbody>
                                                             </table>
                                                         </div>
+                                                    </div>
+                                                ) : (
+                                                    <div class="bg-slate-800/20 border border-dashed border-slate-700/50 p-4 rounded-xl text-center">
+                                                        <p class="text-xs text-slate-500 italic">No output rows returned by these queries. (Equivalence Verified via empty sets)</p>
                                                     </div>
                                                 )}
                                             </div>

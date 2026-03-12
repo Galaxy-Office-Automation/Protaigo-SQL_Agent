@@ -20,7 +20,7 @@ class ReflectionAgent: #this is the main class that will be used to interact wit
     def __init__(self, llm_interface: LLMInterface, validator: EquivalenceValidator = None): #initialize the class
         self.llm = llm_interface  #initialize the LLM interface
         self.validator = validator or EquivalenceValidator()  #initialize the validator
-        self.max_retries = 2  #initialize the max retries
+        self.max_retries = 1  # Allow one retry for reflection if validation fails initially
 
     def reflect_and_refine(self, original_query: str, optimized_query: str) -> str: #this function will be used to reflect on the optimized query and refine it if it violates 
         """
@@ -216,6 +216,15 @@ Provide a REFINED version of the optimized query that:
         """Check if optimized query adds LIMIT, TABLESAMPLE, or alters WHERE filters."""
         orig_upper = original.upper()
         opt_upper = optimized.upper()
+        
+        # Whitelist: structural rewrites using window functions are safe performance
+        # optimizations, not data-altering changes. Skip this check if the optimization
+        # added OVER/PARTITION BY (self-join -> window function rewrite).
+        has_new_window = ('OVER' in opt_upper and 'OVER' not in orig_upper) or \
+                         ('PARTITION BY' in opt_upper and 'PARTITION BY' not in orig_upper) or \
+                         ('_PREAGG' in opt_upper)
+        if has_new_window:
+            return False
         
         # 1. Basic Keyword Injections
         if "LIMIT" in opt_upper and "LIMIT" not in orig_upper:

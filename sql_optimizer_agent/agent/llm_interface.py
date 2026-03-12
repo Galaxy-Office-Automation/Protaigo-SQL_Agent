@@ -53,8 +53,8 @@ class LLMInterface:
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                # Execute HTTP Request, timeout after 30 seconds (reduced from 60s)
-                with urllib.request.urlopen(req, timeout=30) as response:
+                # Execute HTTP Request, timeout after 120 seconds to support complex query reasoning
+                with urllib.request.urlopen(req, timeout=120) as response:
                     # Read, decode, and parse the JSON returning from the network
                     return json.loads(response.read().decode('utf-8'))
             except urllib.error.HTTPError as e:

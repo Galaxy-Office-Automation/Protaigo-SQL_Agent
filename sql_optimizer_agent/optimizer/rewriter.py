@@ -209,9 +209,279 @@ class QueryRewriter:
         
         return result
 
+    def rewrite_self_join_to_window(self, query: str) -> str:
+        """Rewrite self-joins on the same CTE/table into window-function based pre-aggregation.
+        
+        Detects pattern:
+            FROM cte_name c1 JOIN cte_name c2 ON c1.key = c2.key AND c1.pk != c2.pk
+        
+        Replaces with a pre-aggregation CTE using window functions, then arithmetic
+        on the pre-aggregated columns to avoid the O(N²) cartesian product.
+        """
+        # Find self-join pattern: FROM <name> <a1> JOIN <name> <a2> ON <a1>.<key> = <a2>.<key> AND <a1>.<pk> != <a2>.<pk>
+        self_join_pattern = re.compile(
+            r'FROM\s+(\w+)\s+(\w+)\s+JOIN\s+(\w+)\s+(\w+)\s+ON\s+'
+            r'(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)'
+            r'\s+AND\s+(\w+)\.(\w+)\s*!=\s*(\w+)\.(\w+)',
+            re.IGNORECASE | re.DOTALL
+        )
+        
+        m = self_join_pattern.search(query)
+        if not m:
+            return query
+        
+        tbl1, alias1, tbl2, alias2 = m.group(1), m.group(2), m.group(3), m.group(4)
+        
+        # Must be a self-join (same table/CTE name)
+        if tbl1.lower() != tbl2.lower():
+            return query
+        
+        join_key_col = m.group(6)  # The column they join on (e.g. chain_depth)
+        pk_col = m.group(10)       # The column with != (e.g. root_aid)
+        
+        # Find the SELECT clause for this self-join query
+        # We need to identify which columns from c1/c2 are used in the SELECT
+        select_match = re.search(
+            r'SELECT\s+(.*?)\s+FROM\s+' + re.escape(tbl1) + r'\s+' + re.escape(alias1),
+            query, re.IGNORECASE | re.DOTALL
+        )
+        if not select_match:
+            return query
+        
+        select_clause = select_match.group(1)
+        
+        # Identify all columns referenced from alias1 and alias2
+        col_refs_1 = set(re.findall(re.escape(alias1) + r'\.(\w+)', select_clause, re.IGNORECASE))
+        col_refs_2 = set(re.findall(re.escape(alias2) + r'\.(\w+)', select_clause, re.IGNORECASE))
+        
+        # Build a pre-aggregated CTE that computes per-group sums/counts using window functions
+        # All columns from the original CTE plus group-level aggregates
+        all_cols = col_refs_1 | col_refs_2
+        all_cols.discard(join_key_col)  # Don't aggregate the join key
+        all_cols.discard(pk_col)        # Don't aggregate the PK
+        
+        # Build window aggregate columns
+        window_agg_cols = []
+        for col in sorted(all_cols):
+            window_agg_cols.append(f"    SUM({col}) OVER (PARTITION BY {join_key_col}) AS group_total_{col}")
+            window_agg_cols.append(f"    COUNT(*) OVER (PARTITION BY {join_key_col}) AS group_count_{join_key_col}")
+        
+        # Deduplicate
+        window_agg_cols = list(dict.fromkeys(window_agg_cols))
+        
+        # Get all base columns from the original CTE used in SELECT
+        base_cols = col_refs_1 | {join_key_col, pk_col}
+        base_col_list = ", ".join(sorted(base_cols))
+        window_col_list = ",\n".join(window_agg_cols)
+        
+        pre_agg_cte_name = f"__{tbl1.lower()}_preagg"
+        pre_agg_cte = (
+            f"{pre_agg_cte_name} AS (\n"
+            f"  SELECT {base_col_list},\n"
+            f"{window_col_list}\n"
+            f"  FROM {tbl1}\n"
+            f")"
+        )
+        
+        # Rewrite the SELECT clause to use pre-aggregated columns
+        new_select = select_clause
+        for col in sorted(col_refs_2):
+            # Replace alias2.col with (group_total_col - alias1.col) for SUM-like expressions
+            # or (group_count - 1) for COUNT-like expressions  
+            pattern_sum = re.compile(
+                re.escape(alias1) + r'\.' + re.escape(col) + r'\s*\+\s*' + re.escape(alias2) + r'\.' + re.escape(col),
+                re.IGNORECASE
+            )
+            if pattern_sum.search(new_select):
+                # c1.col + c2.col => p.col + (p.group_total_col - p.col) = p.group_total_col
+                new_select = pattern_sum.sub(f"p.group_total_{col}", new_select)
+                continue
+            
+            pattern_mul = re.compile(
+                re.escape(alias1) + r'\.' + re.escape(col) + r'\s*\*\s*' + re.escape(alias2) + r'\.' + re.escape(col),
+                re.IGNORECASE
+            )
+            if pattern_mul.search(new_select):
+                # c1.col * c2.col => p.col * (p.group_total_col - p.col)
+                new_select = pattern_mul.sub(
+                    f"p.{col} * (p.group_total_{col} - p.{col})", new_select
+                )
+                continue
+                
+            # POWER(c1.col - c2.col, 2) pattern
+            power_pattern = re.compile(
+                r'POWER\s*\(\s*' + re.escape(alias1) + r'\.' + re.escape(col) + r'\s*-\s*'
+                + re.escape(alias2) + r'\.(\w+)\s*,\s*2\s*\)',
+                re.IGNORECASE
+            )
+            power_m = power_pattern.search(new_select)
+            if power_m:
+                col2 = power_m.group(1)
+                # For variance-like: POWER(c1.x - c2.y, 2) summed over all c2
+                # This requires a different approach - keep as a note
+                new_select = power_pattern.sub(
+                    f"POWER(p.{col} - (p.group_total_{col2} - p.{col2}), 2)", new_select
+                )
+                continue
+                
+            # Simple alias2.col reference => (group_total_col - col)
+            simple_pattern = re.compile(re.escape(alias2) + r'\.' + re.escape(col), re.IGNORECASE)
+            new_select = simple_pattern.sub(f"(p.group_total_{col} - p.{col})", new_select)
+        
+        # Replace alias1.col with p.col
+        for col in sorted(col_refs_1):
+            new_select = re.sub(
+                re.escape(alias1) + r'\.' + re.escape(col),
+                f"p.{col}", new_select, flags=re.IGNORECASE
+            )
+        
+        # Replace the self-join FROM clause with the pre-agg CTE
+        # Find everything from the self-join SELECT to the end
+        full_self_join_block = query[select_match.start():]
+        
+        # Build the new query block
+        new_from = f"FROM {pre_agg_cte_name} p"
+        
+        # Replace the FROM...JOIN block
+        from_join_end = m.end()
+        new_query = query[:select_match.start()]
+        new_query += f"SELECT {new_select}\n{new_from}\n"
+        
+        # Get the rest after the JOIN ON clause (WHERE, ORDER BY, LIMIT, etc.)
+        rest = query[from_join_end:]
+        
+        # Clean up alias references in the rest (WHERE, ORDER BY)
+        rest = re.sub(re.escape(alias1) + r'\.', 'p.', rest, flags=re.IGNORECASE)
+        rest = re.sub(re.escape(alias2) + r'\.', 'p.', rest, flags=re.IGNORECASE)
+        new_query += rest
+        
+        # Insert the pre-agg CTE
+        # Find the last CTE definition to insert after it
+        last_paren = query[:select_match.start()].rfind(')')
+        if last_paren != -1:
+            new_query = query[:last_paren + 1] + f",\n{pre_agg_cte}\n" + new_query[len(query[:select_match.start()]):]
+        
+        return new_query
+
+    def push_filters_into_cte(self, query: str) -> str:
+        """Move qualifying WHERE filters from an outer query into a CTE definition.
+        
+        Uses balanced parenthesis counting to safely extract CTE bodies (avoids
+        regex catastrophic backtracking on nested CASE/WHEN expressions).
+        Only pushes filters on aggregated columns (those produced by GROUP BY).
+        """
+        result = query
+        
+        # Step 1: Find all CTE definitions by name using balanced-paren parsing
+        cte_name_pattern = re.compile(
+            r'(\w+)\s+AS\s+(?:MATERIALIZED\s+)?\(', re.IGNORECASE
+        )
+        
+        ctes = {}  # name -> (body_start, body_end, body_text)
+        for m in cte_name_pattern.finditer(query):
+            cte_name = m.group(1)
+            # Skip SQL keywords that look like CTE names
+            if cte_name.upper() in ('SELECT', 'WITH', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'RECURSIVE'):
+                continue
+            
+            open_paren = m.end() - 1  # position of the opening '('
+            depth = 1
+            pos = open_paren + 1
+            while pos < len(query) and depth > 0:
+                if query[pos] == '(':
+                    depth += 1
+                elif query[pos] == ')':
+                    depth -= 1
+                pos += 1
+            
+            if depth == 0:
+                body = query[open_paren + 1 : pos - 1].strip()
+                ctes[cte_name] = (open_paren + 1, pos - 1, body)
+        
+        # Step 2: Find the LAST outer WHERE clause (after all CTEs)
+        # The outer query's WHERE is the one after the final CTE
+        last_cte_end = max((end for _, end, _ in ctes.values()), default=0) if ctes else 0
+        outer_part = query[last_cte_end:]
+        
+        outer_where = re.search(
+            r'\bWHERE\s+(.*?)(?:\bORDER\s+BY\b|\bLIMIT\b|$)',
+            outer_part, re.IGNORECASE | re.DOTALL
+        )
+        if not outer_where:
+            return result
+        
+        where_text = outer_where.group(1).strip()
+        
+        # Step 3: Find filter conditions like alias.column > N
+        cond_pattern = re.compile(
+            r'(\w+)\.(\w+)\s*(>|<|>=|<=|=|!=)\s*(\d+)', re.IGNORECASE
+        )
+        
+        for cond_m in cond_pattern.finditer(where_text):
+            alias, col, op, val = cond_m.group(1), cond_m.group(2), cond_m.group(3), cond_m.group(4)
+            
+            # Step 4: Find which CTE this alias maps to
+            # Look for FROM cte_name alias in the outer query
+            for cte_name, (body_start, body_end, body) in ctes.items():
+                alias_usage = re.search(
+                    r'\bFROM\s+' + re.escape(cte_name) + r'\s+' + re.escape(alias) + r'\b',
+                    outer_part, re.IGNORECASE
+                )
+                if not alias_usage:
+                    continue
+                
+                body_upper = body.upper()
+                
+                # Only act on CTEs with GROUP BY (aggregation CTEs)
+                if 'GROUP BY' not in body_upper:
+                    continue
+                
+                # Only push if the column is an aggregate alias (appears in SELECT as "AGG(...) as col")
+                # Check if col appears as an alias: "as col" or "AS col"
+                if not re.search(r'\bAS\s+' + re.escape(col) + r'\b', body, re.IGNORECASE):
+                    continue
+                
+                # Step 4.5: Find the actual expression to avoid using alias in HAVING (Postgres forbids it)
+                expr = col
+                expr_match = re.search(r'(?:SELECT|,)\s*([^,]+?)(?:\s+AS\s+|\s+)' + re.escape(col) + r'\b', body, re.IGNORECASE | re.DOTALL)
+                if expr_match:
+                    expr = expr_match.group(1).strip()
+                
+                # Step 5: Add HAVING clause to the CTE
+                # Use [\w\.]+ instead of \S+ to prevent catastrophic backtracking
+                group_by_match = re.search(r'(GROUP\s+BY\s+[\w\.]+(?:\s*,\s*[\w\.]+)*)', body, re.IGNORECASE)
+                if not group_by_match:
+                    continue
+                
+                group_by_end = group_by_match.end()
+                
+                if re.search(r'\bHAVING\b', body, re.IGNORECASE):
+                    # Append to existing HAVING
+                    having_match = re.search(r'(\bHAVING\b\s*)', body, re.IGNORECASE)
+                    if having_match:
+                        insert_pos = having_match.end()
+                        new_body = body[:insert_pos] + f"{expr} {op} {val} AND " + body[insert_pos:]
+                else:
+                    # Insert HAVING after GROUP BY
+                    new_body = body[:group_by_end] + f"\n    HAVING {expr} {op} {val}" + body[group_by_end:]
+                
+                # Replace in result
+                result = result[:body_start] + new_body + result[body_end:]
+                # Adjust positions for subsequent replacements
+                offset = len(new_body) - len(body)
+                # Update the body in our dict
+                ctes[cte_name] = (body_start, body_end + offset, new_body)
+                break
+        
+        return result
+
     def create_optimized_query(self, query: str, suggestions: List, aggressive: bool = False) -> str:
         """Create an optimized version of the query"""
         optimized = self.apply_suggestions(query, suggestions)
         # Structural optimizations (always equivalent)
         optimized = self.rewrite_correlated_subqueries(optimized)
+        optimized = self.push_filters_into_cte(optimized)
+        # NOTE: rewrite_self_join_to_window is NOT called here because it changes
+        # semantics for pairwise queries. The LLM handles self-join rewrites when safe.
         return optimized
+

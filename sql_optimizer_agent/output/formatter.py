@@ -99,6 +99,28 @@ class OutputFormatter:
     
     def format_as_json(self, result: Any) -> Dict[str, Any]:
         """Format result as JSON-serializable dict"""
+        formatted_suggestions = [
+            {
+                "line": s.line_number,
+                "original": s.original_content,
+                "suggested": s.suggested_content,
+                "explanation": s.explanation,
+                "improvement": s.expected_improvement
+            }
+            for s in result.suggestions
+        ]
+        
+        # Merge LLM suggestions into the UI blocks so they render properly
+        if result.llm_analysis and 'suggestions' in result.llm_analysis:
+            for llm_sugg in result.llm_analysis['suggestions']:
+                formatted_suggestions.append({
+                    "line": llm_sugg.get("line_number", 0),
+                    "original": llm_sugg.get("original", ""),
+                    "suggested": llm_sugg.get("suggested", ""),
+                    "explanation": llm_sugg.get("explanation", ""),
+                    "improvement": llm_sugg.get("estimated_improvement", "")
+                })
+
         return {
             "bottlenecks": [
                 {
@@ -112,16 +134,7 @@ class OutputFormatter:
                 }
                 for bn in result.bottlenecks
             ],
-            "suggestions": [
-                {
-                    "line": s.line_number,
-                    "original": s.original_content,
-                    "suggested": s.suggested_content,
-                    "explanation": s.explanation,
-                    "improvement": s.expected_improvement
-                }
-                for s in result.suggestions
-            ],
+            "suggestions": formatted_suggestions,
             "optimized_query": result.optimized_query,
             "expected_improvement": result.expected_improvement,
             "llm_analysis": result.llm_analysis

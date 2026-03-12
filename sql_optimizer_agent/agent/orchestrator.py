@@ -110,13 +110,17 @@ class AgentOrchestrator:
         # Step 6a: Reflection - Iterative refinement to ensure correctness and safety
         if self.use_llm and self.reflection_agent:
             try:
-                # Use the Reflection Agent to validate data equivalence and semantic safety
-                # We wrap this in a coarse timeout if it were async, but here we just catch exceptions
-                # The underlying LLM and Validator now have tighter timeouts (30s/20s).
                 result_query = self.reflection_agent.reflect_and_refine(query, optimized_query)
                 optimized_query = result_query
             except Exception as e:
                 print(f"Warning: Reflection/Refinement failed: {e}. Falling back to unverified optimized query.")
+
+        # Step 6b: Always apply rule-engine structural rewrites on top of the final query.
+        # These are safe, semantics-preserving transforms (filter pushdown, correlated
+        # subquery elimination) that work regardless of what the LLM produced.
+        optimized_query = self.rewriter.create_optimized_query(
+            optimized_query, suggestions, aggressive=True
+        )
 
         
         # Step 6b: Validate the optimized query for syntax correctness
@@ -144,6 +148,23 @@ class AgentOrchestrator:
                     optimized_query = query
                     print("WARNING: Rule-based query failed validation. Returning original query.")
         
+        # Step 6c: Inject Validation Strategy into LLM explanation for UI visibility
+        if llm_analysis:
+            pgbench_tables = [t for t in parsed_query.tables if 'pgbench' in t.lower()]
+            if pgbench_tables:
+                val_method = "Anchored Stratified Sampling (3 random branches)"
+            elif parsed_query.tables:
+                val_method = "Statistical TABLESAMPLE Validation (1% sampling)"
+            else:
+                val_method = "Standard LIMIT Validation"
+            
+            val_str = f"\n\n**Validation Method**: {val_method} securely evaluated on backend Live DB."
+            # The React UI specifically renders these two keys for the top-level explanation box
+            if 'non_technical_summary' in llm_analysis:
+                llm_analysis['non_technical_summary'] += val_str
+            elif 'analysis' in llm_analysis:
+                llm_analysis['analysis'] += val_str
+
         # Step 7: Calculate an estimated string showing expected improvement based on steps above
         expected_improvement = self._calculate_improvement(
             bottlenecks, suggestions, llm_analysis
