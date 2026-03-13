@@ -5,28 +5,31 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Protaigo SQL Agent System Testing</title>
-    <!-- Use Tailwind for sleek, modern, dynamic design -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <!-- Babel to compile JSX on the fly -->
     <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
 
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #0f172a;
+            background-color: #0a0f1a;
             color: #f8fafc;
         }
 
         .glass-panel {
-            background: rgba(30, 41, 59, 0.7);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .glass-panel-inner {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.05);
         }
 
         .animate-pulse-slow {
@@ -34,41 +37,287 @@
         }
 
         .custom-scrollbar::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
+            width: 6px;
+            height: 6px;
         }
 
         .custom-scrollbar::-webkit-scrollbar-track {
-            background: #1e293b;
-            border-radius: 4px;
+            background: transparent;
         }
 
         .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #475569;
-            border-radius: 4px;
+            background: #334155;
+            border-radius: 3px;
         }
 
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-            background: #64748b;
+            background: #475569;
+        }
+
+        .diff-added {
+            background: rgba(34, 197, 94, 0.12);
+            border-left: 3px solid #22c55e;
+        }
+
+        .diff-removed {
+            background: rgba(239, 68, 68, 0.12);
+            border-left: 3px solid #ef4444;
+        }
+
+        .diff-unchanged {
+            border-left: 3px solid transparent;
+        }
+
+        .severity-high {
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .severity-medium {
+            background: rgba(245, 158, 11, 0.15);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        .severity-low {
+            background: rgba(59, 130, 246, 0.15);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+
+        .change-card {
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.2s ease;
+        }
+
+        .change-card:hover {
+            border-color: rgba(99, 102, 241, 0.3);
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.08);
+        }
+
+        code,
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace !important;
+        }
+
+        .glow-green {
+            text-shadow: 0 0 10px rgba(52, 211, 153, 0.3);
+        }
+
+        .glow-blue {
+            text-shadow: 0 0 10px rgba(96, 165, 250, 0.3);
+        }
+
+        .tab-active {
+            background: rgba(99, 102, 241, 0.2);
+            border-bottom: 2px solid #818cf8;
+            color: #c7d2fe;
+        }
+
+        .tab-inactive {
+            color: #64748b;
+            border-bottom: 2px solid transparent;
+        }
+
+        .tab-inactive:hover {
+            color: #94a3b8;
         }
     </style>
 </head>
 
-<body class="min-h-screen p-6">
+<body class="min-h-screen p-4 md:p-6">
     <div id="root"></div>
 
-    <!-- The React App (compiled by Babel) -->
     <script type="text/babel" data-type="module">
         const { useState } = React;
 
+        /* ========== Simple Line Diff ========== */
+        function computeDiff(original, optimized) {
+            const origLines = original.split('\n');
+            const optLines = optimized.split('\n');
+            const result = [];
+
+            // Use longest common subsequence alignment
+            const maxLen = Math.max(origLines.length, optLines.length);
+            let oi = 0, ni = 0;
+            while (oi < origLines.length || ni < optLines.length) {
+                if (oi >= origLines.length) {
+                    result.push({ type: 'added', content: optLines[ni] });
+                    ni++;
+                } else if (ni >= optLines.length) {
+                    result.push({ type: 'removed', content: origLines[oi] });
+                    oi++;
+                } else if (origLines[oi].trim() === optLines[ni].trim()) {
+                    result.push({ type: 'unchanged', content: optLines[ni] });
+                    oi++; ni++;
+                } else {
+                    // Look ahead to find matches
+                    let foundOrig = -1, foundNew = -1;
+                    for (let k = 1; k <= 5 && ni + k < optLines.length; k++) {
+                        if (origLines[oi].trim() === optLines[ni + k].trim()) { foundNew = k; break; }
+                    }
+                    for (let k = 1; k <= 5 && oi + k < origLines.length; k++) {
+                        if (origLines[oi + k].trim() === optLines[ni].trim()) { foundOrig = k; break; }
+                    }
+                    if (foundNew > 0 && (foundOrig < 0 || foundNew <= foundOrig)) {
+                        for (let k = 0; k < foundNew; k++) {
+                            result.push({ type: 'added', content: optLines[ni++] });
+                        }
+                    } else if (foundOrig > 0) {
+                        for (let k = 0; k < foundOrig; k++) {
+                            result.push({ type: 'removed', content: origLines[oi++] });
+                        }
+                    } else {
+                        result.push({ type: 'removed', content: origLines[oi++] });
+                        result.push({ type: 'added', content: optLines[ni++] });
+                    }
+                }
+            }
+            return result;
+        }
+
+        /* ========== Severity Badge ========== */
+        const SeverityBadge = ({ severity }) => {
+            const map = {
+                HIGH: { color: 'text-red-400', bg: 'bg-red-500/20 border-red-500/30', icon: '🔴' },
+                MEDIUM: { color: 'text-amber-400', bg: 'bg-amber-500/20 border-amber-500/30', icon: '🟡' },
+                LOW: { color: 'text-blue-400', bg: 'bg-blue-500/20 border-blue-500/30', icon: '🔵' },
+            };
+            const s = map[severity] || map.LOW;
+            return (
+                <span class={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${s.bg} ${s.color}`}>
+                    {s.icon} {severity}
+                </span>
+            );
+        };
+
+        /* ========== Bottleneck Card ========== */
+        const BottleneckCard = ({ bn }) => {
+            const [expanded, setExpanded] = useState(false);
+            const severityClass = bn.severity === 'HIGH' ? 'severity-high' : bn.severity === 'MEDIUM' ? 'severity-medium' : 'severity-low';
+            return (
+                <div class={`rounded-lg p-3 cursor-pointer transition-all ${severityClass}`} onClick={() => setExpanded(!expanded)}>
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <SeverityBadge severity={bn.severity} />
+                            <span class="text-xs font-semibold text-slate-200 truncate">{bn.type}</span>
+                            <span class="text-[10px] text-slate-500 font-mono shrink-0">Line {bn.line}</span>
+                        </div>
+                        <span class="text-[10px] text-slate-500">{expanded ? '▲' : '▼'}</span>
+                    </div>
+                    {expanded && (
+                        <div class="mt-2 space-y-1.5 text-xs text-slate-400">
+                            <p><span class="text-slate-500 font-medium">Issue:</span> {bn.description}</p>
+                            {bn.impact && <p><span class="text-slate-500 font-medium">Impact:</span> {bn.impact}</p>}
+                            {bn.suggestion && <p><span class="text-slate-500 font-medium">Fix:</span> <span class="text-emerald-400">{bn.suggestion}</span></p>}
+                            {bn.content && <code class="block mt-1 text-[10px] text-rose-300 bg-slate-900/60 rounded p-1.5 overflow-x-auto">{bn.content}</code>}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        /* ========== Change Card ========== */
+        const ChangeCard = ({ sugg, index }) => (
+            <div class="change-card rounded-xl p-4 space-y-3">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <span class="w-6 h-6 flex items-center justify-center rounded-full bg-indigo-500/20 text-indigo-400 text-[10px] font-bold">{index + 1}</span>
+                        <span class="text-xs font-semibold text-slate-300">
+                            {sugg.line > 0 ? `Line ${sugg.line}` : 'Structural Change'}
+                        </span>
+                    </div>
+                    {sugg.improvement && (
+                        <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 font-medium">{sugg.improvement}</span>
+                    )}
+                </div>
+                {sugg.original && (
+                    <div class="space-y-1">
+                        <span class="text-[9px] uppercase tracking-wider text-red-400/70 font-bold">Before</span>
+                        <code class="block text-[11px] text-red-300/90 bg-red-500/5 border border-red-500/10 rounded-lg p-2 overflow-x-auto whitespace-pre-wrap">{sugg.original}</code>
+                    </div>
+                )}
+                {sugg.suggested && (
+                    <div class="space-y-1">
+                        <span class="text-[9px] uppercase tracking-wider text-emerald-400/70 font-bold">After</span>
+                        <code class="block text-[11px] text-emerald-300/90 bg-emerald-500/5 border border-emerald-500/10 rounded-lg p-2 overflow-x-auto whitespace-pre-wrap">{sugg.suggested}</code>
+                    </div>
+                )}
+                {sugg.explanation && (
+                    <p class="text-[11px] text-slate-400 leading-relaxed border-t border-slate-700/30 pt-2">
+                        <span class="text-slate-500 font-medium">Why: </span>{sugg.explanation}
+                    </p>
+                )}
+            </div>
+        );
+
+        /* ========== Inline Diff View ========== */
+        const DiffView = ({ original, optimized }) => {
+            const lines = computeDiff(original, optimized);
+            let addedCount = lines.filter(l => l.type === 'added').length;
+            let removedCount = lines.filter(l => l.type === 'removed').length;
+            return (
+                <div class="space-y-2">
+                    <div class="flex items-center gap-3 text-[10px] font-mono">
+                        <span class="text-emerald-400">+{addedCount} added</span>
+                        <span class="text-red-400">−{removedCount} removed</span>
+                    </div>
+                    <div class="bg-slate-900/70 rounded-xl border border-slate-700/30 overflow-hidden">
+                        <div class="overflow-x-auto custom-scrollbar max-h-[350px] overflow-y-auto">
+                            {lines.map((line, i) => (
+                                <div key={i} class={`flex gap-0 text-[11px] font-mono leading-[1.6] ${line.type === 'added' ? 'diff-added' : line.type === 'removed' ? 'diff-removed' : 'diff-unchanged'
+                                    }`}>
+                                    <span class={`w-8 shrink-0 text-right pr-2 select-none ${line.type === 'added' ? 'text-emerald-600' : line.type === 'removed' ? 'text-red-600' : 'text-slate-600'
+                                        }`}>
+                                        {line.type === 'added' ? '+' : line.type === 'removed' ? '−' : ' '}
+                                    </span>
+                                    <span class={`flex-1 px-2 py-px ${line.type === 'added' ? 'text-emerald-300' : line.type === 'removed' ? 'text-red-300 line-through opacity-70' : 'text-slate-400'
+                                        }`}>
+                                        {line.content || ' '}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        /* ========== Performance Bar ========== */
+        const PerfBar = ({ label, execMs, planMs, wallSec, rowCount, maxMs, color, bgColor }) => (
+            <div class="space-y-1">
+                <div class="flex items-center justify-between text-[10px]">
+                    <span class={`font-medium ${color}`}>{label}</span>
+                    <div class="flex items-center gap-3 text-slate-500 font-mono">
+                        {rowCount !== undefined && <span>{rowCount} rows</span>}
+                        {planMs > 0 && <span>plan: {planMs.toFixed(1)}ms</span>}
+                        <span class={color}>{(execMs || 0).toFixed(1)}ms exec</span>
+                        {wallSec > 0 && <span>({wallSec.toFixed(1)}s wall)</span>}
+                    </div>
+                </div>
+                <div class="bg-slate-800 h-2 rounded-full overflow-hidden">
+                    <div class={`h-full rounded-full ${bgColor}`}
+                        style={{ width: `${Math.max(5, (execMs / maxMs) * 100)}%`, transition: 'width 0.6s ease' }}></div>
+                </div>
+            </div>
+        );
+
+        /* ========== Tab Button ========== */
+        const Tab = ({ label, icon, active, onClick }) => (
+            <button onClick={onClick} class={`px-3 py-2 text-xs font-medium transition-all ${active ? 'tab-active' : 'tab-inactive'}`}>
+                {icon} {label}
+            </button>
+        );
+
+        /* ========== Main App ========== */
         const App = () => {
-            const [query, setQuery] = useState('WITH account_data AS (\n  SELECT *\n  FROM pgbench_accounts\n  WHERE aid <= 50000\n)\nSELECT *\nFROM account_data\nORDER BY abalance DESC;\n');
-            const [status, setStatus] = useState('idle'); // idle, loading, success, error
+            const [query, setQuery] = useState(`SELECT\n    a.aid,\n    a.abalance AS account_balance,\n    (SELECT COUNT(*) FROM pgbench_history h WHERE h.aid = a.aid) AS total_transactions,\n    (SELECT COALESCE(SUM(h.delta), 0) FROM pgbench_history h WHERE h.aid = a.aid) AS total_transaction_volume,\n    (SELECT MAX(h.mtime) FROM pgbench_history h WHERE h.aid = a.aid) AS last_transaction_time\nFROM pgbench_accounts a\nJOIN pgbench_branches b ON a.bid = b.bid\nWHERE a.abalance > (\n    SELECT AVG(a2.abalance)\n    FROM pgbench_accounts a2\n    WHERE a2.bid = a.bid\n)\nAND a.aid IN (\n    SELECT h.aid\n    FROM pgbench_history h\n    GROUP BY h.aid\n    HAVING COUNT(*) >= 2\n)\nAND CAST(a.abalance AS TEXT) LIKE '%5%'\nORDER BY total_transactions DESC, account_balance DESC\nLIMIT 500;`);
+            const [status, setStatus] = useState('idle');
             const [result, setResult] = useState(null);
             const [errorMsg, setErrorMsg] = useState('');
-            const [compareStatus, setCompareStatus] = useState('idle'); // idle, loading, done, error
+            const [compareStatus, setCompareStatus] = useState('idle');
             const [compareResult, setCompareResult] = useState(null);
             const [compareError, setCompareError] = useState('');
+            const [activeTab, setActiveTab] = useState('changes');
 
             const handleCompare = async () => {
                 if (!result || !result.optimized_query) return;
@@ -97,68 +346,60 @@
                 if (!query.trim()) return;
                 setCompareStatus('idle');
                 setCompareResult(null);
-
                 setStatus('loading');
                 setResult(null);
                 setErrorMsg('');
+                setActiveTab('changes');
 
                 try {
-                    // Make request to the FastAPI server running on port 5051 on the very same host IP
                     const apiUrl = window.location.protocol + '//' + window.location.hostname + ':5051/analyze';
                     const response = await fetch(apiUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ query: query })
                     });
-
                     const rawData = await response.json();
-
-                    // The backend returns a JSON-encoded string, so we must parse it again if necessary
                     const data = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
-
-                    if (!response.ok || data.error) {
-                        throw new Error(data.error || 'Optimization failed');
-                    }
-
+                    if (!response.ok || data.error) throw new Error(data.error || 'Optimization failed');
                     setResult(data);
                     setStatus('success');
                 } catch (err) {
                     console.error(err);
-                    setErrorMsg(err.message || 'Failed to connect to the Protaigo SQL Agent. Is the server running on port 5051?');
+                    setErrorMsg(err.message || 'Failed to connect to the Protaigo SQL Agent.');
                     setStatus('error');
                 }
             };
 
             return (
-                <div class="max-w-7xl mx-auto flex flex-col h-[90vh] gap-6">
+                <div class="max-w-[1600px] mx-auto flex flex-col min-h-[90vh] gap-5">
                     {/* Header */}
-                    <header class="flex items-center justify-between glass-panel p-6 rounded-2xl">
+                    <header class="flex justify-between items-center">
                         <div>
-                            <h1 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400 tracking-tight">
+                            <h1 class="text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-emerald-400 flex items-center gap-2">
                                 Protaigo SQL Agent
+                                <span class="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/30 uppercase tracking-tighter font-mono">v3.3</span>
                             </h1>
-                            <p class="text-slate-400 mt-1 text-sm font-medium">System Testing Interface</p>
+                            <p class="text-slate-500 text-xs mt-0.5">Advanced Query Optimization with Full Transparency</p>
                         </div>
-                        <div class="flex items-center gap-3 bg-slate-800/50 px-4 py-2 rounded-full border border-slate-700">
-                            <div class={`w-3 h-3 rounded-full ${status === 'loading' ? 'bg-amber-400 animate-pulse-slow' : status === 'success' ? 'bg-emerald-500' : 'bg-blue-500'}`}></div>
-                            <span class="text-sm font-medium text-slate-300">
+                        <div class="flex items-center gap-2.5 bg-slate-800/40 px-3 py-1.5 rounded-full border border-slate-700/50">
+                            <div class={`w-2.5 h-2.5 rounded-full ${status === 'loading' ? 'bg-amber-400 animate-pulse-slow' : status === 'success' ? 'bg-emerald-500' : 'bg-blue-500'}`}></div>
+                            <span class="text-xs font-medium text-slate-400">
                                 {status === 'loading' ? 'Analyzing Query...' : status === 'success' ? 'Optimization Complete' : 'System Ready'}
                             </span>
                         </div>
                     </header>
 
-                    {/* Main Content Area */}
-                    <main class="flex-1 flex gap-6 min-h-0">
-
-                        {/* Left Side: Input */}
-                        <div class="w-1/2 flex flex-col gap-4">
-                            <div class="glass-panel rounded-2xl p-5 flex-1 flex flex-col">
-                                <label class="text-sm font-semibold text-slate-300 mb-3 flex items-center justify-between">
+                    {/* Main Layout */}
+                    <main class="flex-1 flex gap-5 min-h-0">
+                        {/* Left Panel - Input */}
+                        <div class="w-[38%] flex flex-col gap-4">
+                            <div class="glass-panel rounded-2xl p-4 flex-1 flex flex-col">
+                                <label class="text-xs font-semibold text-slate-400 mb-2 flex items-center justify-between">
                                     <span>Input SQL Query</span>
-                                    <span class="px-2 py-1 bg-slate-800 rounded text-xs text-slate-400 font-mono">PostgreSQL</span>
+                                    <span class="px-2 py-0.5 bg-slate-800/80 rounded text-[10px] text-slate-500 font-mono">PostgreSQL</span>
                                 </label>
                                 <textarea
-                                    class="w-full flex-1 bg-slate-900/50 text-emerald-300 font-mono p-4 rounded-xl border border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none resize-none custom-scrollbar transition-all"
+                                    class="w-full flex-1 bg-slate-900/50 text-emerald-300 font-mono text-xs p-3 rounded-xl border border-slate-700/50 focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/30 outline-none resize-none custom-scrollbar transition-all leading-relaxed"
                                     value={query}
                                     onChange={(e) => setQuery(e.target.value)}
                                     placeholder="Paste your slow SQL query here..."
@@ -169,263 +410,204 @@
                             <button
                                 onClick={handleAnalyze}
                                 disabled={status === 'loading' || !query.trim()}
-                                class="w-full py-4 rounded-2xl font-bold text-white shadow-lg transition-all transform hover:-translate-y-1 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500"
+                                class="w-full py-3.5 rounded-2xl font-bold text-white shadow-lg transition-all transform hover:-translate-y-0.5 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-sm"
                             >
-                                {status === 'loading' ? (
-                                    <span class="flex items-center justify-center gap-2">
-                                        <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                                        Analyzing Bottlenecks...
-                                    </span>
-                                ) : 'Optimize Query'}
+                                {status === 'loading' ? '⏳ Analyzing Bottlenecks...' : '⚡ Optimize Query'}
                             </button>
                         </div>
 
-                        {/* Right Side: Output */}
-                        <div class="w-1/2 glass-panel rounded-2xl flex flex-col p-5 overflow-hidden">
-                            <h2 class="text-sm font-semibold text-slate-300 mb-4 flex justify-between items-center pb-3 border-b border-slate-700/50">
-                                <span>Agent Output</span>
-                            </h2>
+                        {/* Right Panel - Agent Output */}
+                        <div class="w-[62%] glass-panel rounded-2xl flex flex-col overflow-hidden">
+                            <div class="px-5 pt-4 pb-0">
+                                <h2 class="text-xs font-semibold text-slate-400 mb-3 flex justify-between items-center">
+                                    <span>Agent Output</span>
+                                    {result && result.expected_improvement && (
+                                        <span class="px-3 py-1 rounded-full bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold glow-green">
+                                            ⚡ {result.expected_improvement}
+                                        </span>
+                                    )}
+                                </h2>
+                            </div>
 
-                            <div class="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-2">
+                            <div class="flex-1 overflow-y-auto custom-scrollbar px-5 pb-5">
+                                {/* Idle State */}
                                 {status === 'idle' && (
-                                    <div class="h-full flex flex-col items-center justify-center text-slate-500">
-                                        <svg class="w-16 h-16 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                                        <p>Run the agent to see AI optimizations</p>
+                                    <div class="h-full flex flex-col items-center justify-center text-slate-600">
+                                        <svg class="w-12 h-12 mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                                        <p class="text-sm">Run the agent to see AI optimizations</p>
                                     </div>
                                 )}
 
+                                {/* Loading State */}
                                 {status === 'loading' && (
-                                    <div class="h-full flex flex-col items-center justify-center text-blue-400">
-                                        <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                                        <p class="animate-pulse">The Agent is thinking...</p>
-                                        <p class="text-xs text-slate-500 mt-2">Checking syntax, detecting bottlenecks, and testing rules...</p>
+                                    <div class="h-full flex flex-col items-center justify-center text-indigo-400">
+                                        <div class="w-10 h-10 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+                                        <p class="text-sm">The Agent is thinking...</p>
+                                        <p class="text-[10px] text-slate-600 mt-1">Analyzing bottlenecks, generating optimizations, validating correctness</p>
                                     </div>
                                 )}
 
+                                {/* Error State */}
                                 {status === 'error' && (
                                     <div class="bg-red-500/10 border border-red-500/20 p-4 rounded-xl text-red-400 text-sm">
-                                        <div class="flex items-center gap-2 mb-2 font-bold">
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                            Error Connecting to Agent
-                                        </div>
                                         {errorMsg}
                                     </div>
                                 )}
 
+                                {/* Success State */}
                                 {status === 'success' && result && (
-                                    <div class="space-y-5 animate-fade-in">
-
-                                        {/* Summary Card */}
-                                        <div class="p-4 rounded-xl bg-gradient-to-br from-blue-900/40 to-indigo-900/30 border border-blue-500/20">
-                                            <div class="flex items-start justify-between mb-2">
-                                                <h3 class="text-xs font-bold text-blue-400 uppercase tracking-wider">What the Agent Did</h3>
-                                                {(result.expected_improvement || (result.llm_analysis && result.llm_analysis.expected_speedup)) && (
-                                                    <span class="bg-emerald-500/20 text-emerald-400 px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap">
-                                                        ⚡ {result.expected_improvement || result.llm_analysis.expected_speedup}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <p class="text-sm text-slate-300 leading-relaxed">
-                                                {result.llm_analysis ? (result.llm_analysis.non_technical_summary || result.llm_analysis.analysis) : "The rule engine applied structural SQL optimizations to your query."}
+                                    <div class="space-y-4">
+                                        {/* Strategy Card */}
+                                        <div class="p-4 rounded-xl bg-gradient-to-br from-indigo-900/30 to-blue-900/20 border border-indigo-500/15">
+                                            <h3 class="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-1.5">Strategy</h3>
+                                            <p class="text-xs text-slate-300 leading-relaxed">
+                                                {result.llm_analysis ? (result.llm_analysis.non_technical_summary || result.llm_analysis.analysis) : "Optimized SQL structure."}
                                             </p>
                                         </div>
 
-                                        {/* Detected Bottlenecks & How We Fixed Them */}
-                                        {result.bottlenecks && result.bottlenecks.length > 0 && (
-                                            <div>
-                                                <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Detected Bottlenecks & How We Fixed Them</h3>
-                                                <div class="space-y-3">
-                                                    {result.bottlenecks.map((b, idx) => (
-                                                        <div key={idx} class="bg-slate-800/40 border border-slate-700/50 p-4 rounded-xl">
-                                                            <div class="flex items-center gap-2 mb-2">
-                                                                <span class={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${b.severity === 'HIGH' ? 'bg-red-500/20 text-red-400' :
-                                                                    b.severity === 'MEDIUM' ? 'bg-amber-500/20 text-amber-400' :
-                                                                        'bg-slate-500/20 text-slate-400'
-                                                                    }`}>{b.severity}</span>
-                                                                <span class="text-xs font-semibold text-slate-400">Line {b.line}</span>
-                                                                <span class="text-xs bg-slate-700/50 text-slate-300 px-2 py-0.5 rounded font-mono">{b.type}</span>
-                                                            </div>
-                                                            <p class="text-sm text-slate-300 mb-2">{b.description}</p>
-                                                            <div class="flex gap-3 mt-2">
-                                                                <div class="flex-1 bg-red-500/5 p-2 rounded border border-red-500/10">
-                                                                    <div class="text-[10px] text-red-400 font-bold uppercase mb-1">⏱ Performance Impact</div>
-                                                                    <p class="text-xs text-red-300">{b.impact}</p>
-                                                                </div>
-                                                                <div class="flex-1 bg-emerald-500/5 p-2 rounded border border-emerald-500/10">
-                                                                    <div class="text-[10px] text-emerald-400 font-bold uppercase mb-1">✅ Our Fix</div>
-                                                                    <p class="text-xs text-emerald-300">{b.suggestion}</p>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
+                                        {/* Tabs */}
+                                        <div class="flex border-b border-slate-700/50 gap-0">
+                                            <Tab label="Changes Made" icon="📝" active={activeTab === 'changes'} onClick={() => setActiveTab('changes')} />
+                                            <Tab label="Bottlenecks" icon="🔍" active={activeTab === 'bottlenecks'} onClick={() => setActiveTab('bottlenecks')} />
+                                            <Tab label="Inline Diff" icon="±" active={activeTab === 'diff'} onClick={() => setActiveTab('diff')} />
+                                            <Tab label="Optimized SQL" icon="✓" active={activeTab === 'sql'} onClick={() => setActiveTab('sql')} />
+                                        </div>
+
+                                        {/* Tab: Changes Made */}
+                                        {activeTab === 'changes' && (
+                                            <div class="space-y-3">
+                                                {result.suggestions && result.suggestions.length > 0 ? (
+                                                    result.suggestions.map((sugg, i) => <ChangeCard key={i} sugg={sugg} index={i} />)
+                                                ) : (
+                                                    <div class="text-xs text-slate-500 italic p-4 text-center glass-panel-inner rounded-lg">
+                                                        No line-level suggestions. The LLM performed a structural rewrite.
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
 
-                                        {/* Optimized SQL */}
-                                        <div>
-                                            <div class="flex items-center justify-between mb-2">
-                                                <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider">Optimized SQL</h3>
-                                                <button onClick={() => { navigator.clipboard.writeText(result.optimized_query); alert('Copied!') }} class="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors">
-                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-                                                    Copy Code
-                                                </button>
-                                            </div>
-                                            <pre class="bg-slate-900 p-4 rounded-xl border border-slate-700 overflow-x-auto custom-scrollbar">
-                                                <code class="text-sm font-mono text-emerald-400">{result.optimized_query}</code>
-                                            </pre>
-                                        </div>
-
-                                        {/* Line-by-Line Changes */}
-                                        {result.suggestions && result.suggestions.length > 0 && (
-                                            <div>
-                                                <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Line-by-Line Changes</h3>
-                                                <div class="space-y-3">
-                                                    {result.suggestions.map((s, idx) => (
-                                                        <div key={idx} class="bg-slate-800/30 border border-slate-700/50 p-3 rounded-xl">
-                                                            <div class="flex items-center gap-2 mb-2">
-                                                                <span class="bg-blue-500/20 text-blue-400 text-xs px-2 py-0.5 rounded font-bold">Line {s.line}</span>
-                                                                <span class="text-sm text-slate-300 flex-1">{s.explanation}</span>
-                                                                {s.improvement && (
-                                                                    <span class="bg-emerald-500/10 text-emerald-400 text-[10px] px-2 py-0.5 rounded-full font-bold whitespace-nowrap">↑ {s.improvement}</span>
-                                                                )}
-                                                            </div>
-                                                            <div class="grid grid-cols-2 gap-2 mt-2">
-                                                                <div class="bg-red-500/5 p-2 rounded border border-red-500/10">
-                                                                    <div class="text-[10px] text-red-500 uppercase font-bold mb-1">Before</div>
-                                                                    <code class="text-xs text-red-400 font-mono break-all">{s.original}</code>
-                                                                </div>
-                                                                <div class="bg-emerald-500/5 p-2 rounded border border-emerald-500/10">
-                                                                    <div class="text-[10px] text-emerald-500 uppercase font-bold mb-1">After</div>
-                                                                    <code class="text-xs text-emerald-400 font-mono break-all">{s.suggested}</code>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
+                                        {/* Tab: Bottlenecks */}
+                                        {activeTab === 'bottlenecks' && (
+                                            <div class="space-y-2">
+                                                {result.bottlenecks && result.bottlenecks.length > 0 ? (
+                                                    result.bottlenecks.map((bn, i) => <BottleneckCard key={i} bn={bn} />)
+                                                ) : (
+                                                    <div class="text-xs text-slate-500 italic p-4 text-center glass-panel-inner rounded-lg">
+                                                        No bottlenecks detected.
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
-                                    </div>
-                                )}
 
-                                {/* Agent Progress Logs */}
-                                {result.agent_logs && (
-                                    <div class="mt-6 border-t border-slate-700/50 pt-6">
-                                        <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
-                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                                            Agent Activity Log
-                                        </h3>
-                                        <div class="bg-black/40 rounded-xl border border-slate-700/50 p-3 relative group">
-                                            <pre class="text-[10px] text-slate-400 font-mono whitespace-pre-wrap max-h-60 overflow-y-auto custom-scrollbar selection:bg-blue-500/30">
-                                                {result.agent_logs}
-                                            </pre>
-                                            <div class="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <span class="text-[8px] text-slate-600 bg-slate-800 px-1.5 py-0.5 rounded uppercase font-bold">Internal Process Stream</span>
+                                        {/* Tab: Diff */}
+                                        {activeTab === 'diff' && (
+                                            <DiffView original={query} optimized={result.optimized_query} />
+                                        )}
+
+                                        {/* Tab: Optimized SQL */}
+                                        {activeTab === 'sql' && (
+                                            <div class="bg-slate-900/70 p-4 rounded-xl border border-slate-700/30 overflow-x-auto">
+                                                <code class="text-[11px] font-mono text-emerald-400 whitespace-pre-wrap leading-relaxed">{result.optimized_query}</code>
                                             </div>
-                                        </div>
-                                    </div>
-                                )}
+                                        )}
 
-                                {/* Compare Button + Results */}
-                                {status === 'success' && result && result.optimized_query && (
-                                    <div class="mt-4 pt-4 border-t border-slate-700/50">
+                                        {/* Compare Button */}
                                         <button
                                             onClick={handleCompare}
                                             disabled={compareStatus === 'loading'}
-                                            class="w-full py-3 rounded-xl font-bold text-white shadow-lg transition-all transform hover:-translate-y-0.5 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-sm"
+                                            class="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-sm transition-all transform hover:-translate-y-0.5 active:scale-[0.98] disabled:opacity-50 disabled:transform-none"
                                         >
-                                            {compareStatus === 'loading' ? (
-                                                <span class="flex items-center justify-center gap-2">
-                                                    <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                                                    Running on Live Database...
-                                                </span>
-                                            ) : '🔍 Run & Compare on Live DB'}
+                                            {compareStatus === 'loading' ? '⏳ Running Comparison...' : '🟢 Run & Compare on Live DB'}
                                         </button>
 
+                                        {/* Compare Error */}
                                         {compareStatus === 'error' && (
-                                            <div class="mt-3 bg-red-500/10 border border-red-500/20 p-3 rounded-xl text-red-400 text-sm">
-                                                <strong>DB Error:</strong> {compareError}
+                                            <div class="bg-red-500/10 border border-red-500/20 p-3 rounded-lg text-red-400 text-xs">
+                                                {compareError}
                                             </div>
                                         )}
 
+                                        {/* Compare Results */}
                                         {compareStatus === 'done' && compareResult && (
-                                            <div class="mt-4 space-y-4">
-                                                {/* Speedup + Equivalence Banner */}
-                                                <div class={`p-4 rounded-xl border flex items-center justify-between ${compareResult.results_match
-                                                    ? 'bg-emerald-500/10 border-emerald-500/20'
-                                                    : 'bg-amber-500/10 border-amber-500/20'
-                                                    }`}>
-                                                    <div>
-                                                        <div class="text-lg font-bold text-white flex items-center gap-2">
-                                                            ⚡ {compareResult.speedup}
-                                                        </div>
-                                                        <div class={`text-xs mt-1 font-medium ${compareResult.results_match ? 'text-emerald-400' : 'text-amber-400'
-                                                            }`}>
-                                                            {compareResult.results_match
-                                                                ? '✅ Results are identical — optimization is safe'
-                                                                : '⚠️ Results differ — review the optimized query'}
-                                                        </div>
+                                            <div class="space-y-4 pt-1">
+                                                {/* Speedup + Match Badge */}
+                                                <div class="flex gap-3">
+                                                    <div class={`flex-1 p-4 rounded-xl border ${compareResult.results_match ? 'bg-emerald-500/8 border-emerald-500/20' : 'bg-amber-500/8 border-amber-500/20'}`}>
+                                                        <div class="text-xl font-bold text-white glow-green">⚡ {compareResult.speedup}</div>
+                                                        <div class="text-[10px] text-slate-400 mt-0.5">{compareResult.results_match ? '✅ Results Identical' : '⚠️ Results Differ'}</div>
                                                     </div>
+                                                    {compareResult.validation_metadata && (
+                                                        <div class="flex-1 p-4 rounded-xl border border-slate-700/30 glass-panel-inner">
+                                                            <div class="text-[10px] font-bold text-slate-500 uppercase mb-1">Validation</div>
+                                                            <div class="text-[11px] text-slate-300">{compareResult.validation_metadata.method || 'Standard'}</div>
+                                                        </div>
+                                                    )}
                                                 </div>
 
-                                                {/* Execution Time Bars */}
-                                                <div class="space-y-2">
-                                                    <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider">Execution Time (ms)</h4>
-                                                    {[compareResult.original, compareResult.optimized].map((r, i) => {
-                                                        const maxTime = Math.max(
+                                                {/* Performance Bars */}
+                                                <div class="space-y-3 pt-3 border-t border-slate-700/30">
+                                                    <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Performance Comparison</h4>
+                                                    {compareResult.original && compareResult.optimized && (() => {
+                                                        const maxMs = Math.max(
                                                             compareResult.original.execution_time_ms || 1,
                                                             compareResult.optimized.execution_time_ms || 1
                                                         );
-                                                        const pct = Math.max(5, (r.execution_time_ms / maxTime) * 100);
                                                         return (
-                                                            <div key={i}>
-                                                                <div class="flex justify-between text-xs mb-1">
-                                                                    <span class={i === 0 ? 'text-red-400' : 'text-emerald-400'}>{r.label}</span>
-                                                                    <span class="text-slate-400 font-mono">
-                                                                        {r.error ? 'Timed out / Error' : `${r.execution_time_ms.toFixed(1)} ms`}
-                                                                    </span>
-                                                                </div>
-                                                                <div class="w-full bg-slate-800 rounded-full h-3">
-                                                                    <div
-                                                                        class={`h-3 rounded-full transition-all duration-700 ${i === 0 ? 'bg-red-500/70' : 'bg-emerald-500/70'}`}
-                                                                        style={{ width: `${r.error ? 100 : pct}%` }}
-                                                                    ></div>
-                                                                </div>
+                                                            <div class="space-y-2.5">
+                                                                <PerfBar label={compareResult.original.label} execMs={compareResult.original.execution_time_ms}
+                                                                    planMs={compareResult.original.planning_time_ms} wallSec={compareResult.original.wall_time_sec}
+                                                                    rowCount={compareResult.original.row_count} maxMs={maxMs} color="text-red-400" bgColor="bg-red-500/60" />
+                                                                <PerfBar label={compareResult.optimized.label} execMs={compareResult.optimized.execution_time_ms}
+                                                                    planMs={compareResult.optimized.planning_time_ms} wallSec={compareResult.optimized.wall_time_sec}
+                                                                    rowCount={compareResult.optimized.row_count} maxMs={maxMs} color="text-emerald-400" bgColor="bg-emerald-500/60" />
                                                             </div>
                                                         );
-                                                    })}
+                                                    })()}
                                                 </div>
 
-                                                {/* Sample Rows */}
-                                                {compareResult.optimized.sample_rows && compareResult.optimized.sample_rows.length > 0 ? (
-                                                    <div class="animate-fade-in">
-                                                        <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Sample Output (first {compareResult.optimized.row_count} rows)</h4>
-                                                        <div class="overflow-x-auto custom-scrollbar">
-                                                            <table class="min-w-full text-xs font-mono">
-                                                                <thead>
-                                                                    <tr class="border-b border-slate-700">
-                                                                        {compareResult.optimized.columns.map((col, ci) => (
-                                                                            <th key={ci} class="px-3 py-2 text-left text-slate-400 font-bold">{col}</th>
+                                                {/* Sample Output of Optimized Query */}
+                                                <div class="pt-3 border-t border-slate-700/30">
+                                                    <div class="flex items-center justify-between mb-3">
+                                                        <h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                                                            Sample Output (First {compareResult.optimized && compareResult.optimized.sample_rows ? compareResult.optimized.sample_rows.length : 0} Rows)
+                                                        </h4>
+                                                        {compareResult.results_match !== undefined && (
+                                                            <span class={`text-[10px] px-2.5 py-1 rounded-full font-bold ${compareResult.results_match
+                                                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
+                                                                : 'bg-amber-500/15 text-amber-400 border border-amber-500/20'}`}>
+                                                                {compareResult.results_match ? '✅ Results Identical' : '⚠️ Results Differ — review the optimized query'}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {compareResult.optimized && compareResult.optimized.sample_rows && compareResult.optimized.sample_rows.length > 0 ? (
+                                                        <div class="overflow-x-auto border border-emerald-500/15 rounded-xl bg-slate-900/60">
+                                                            <table class="min-w-full text-[11px] font-mono">
+                                                                <thead class="bg-emerald-500/8 sticky top-0">
+                                                                    <tr>
+                                                                        {compareResult.optimized.columns.map((c, i) => (
+                                                                            <th key={i} class="px-3 py-2 text-left text-emerald-300/80 font-semibold whitespace-nowrap border-b border-emerald-500/10">{c}</th>
                                                                         ))}
                                                                     </tr>
                                                                 </thead>
                                                                 <tbody>
                                                                     {compareResult.optimized.sample_rows.map((row, ri) => (
-                                                                        <tr key={ri} class="border-b border-slate-800 hover:bg-slate-800/30">
-                                                                            {compareResult.optimized.columns.map((col, ci) => (
-                                                                                <td key={ci} class="px-3 py-1.5 text-slate-300 max-w-[200px] truncate">{row[col]}</td>
+                                                                        <tr key={ri} class={`border-b border-slate-800/30 ${ri % 2 === 0 ? 'bg-slate-900/30' : 'bg-slate-800/10'} hover:bg-slate-700/20 transition-colors`}>
+                                                                            {compareResult.optimized.columns.map((c, ci) => (
+                                                                                <td key={ci} class="px-3 py-1.5 text-slate-300 whitespace-nowrap">{row[c]}</td>
                                                                             ))}
                                                                         </tr>
                                                                     ))}
                                                                 </tbody>
                                                             </table>
                                                         </div>
-                                                    </div>
-                                                ) : (
-                                                    <div class="bg-slate-800/20 border border-dashed border-slate-700/50 p-4 rounded-xl text-center">
-                                                        <p class="text-xs text-slate-500 italic">No output rows returned by these queries. (Equivalence Verified via empty sets)</p>
-                                                    </div>
-                                                )}
+                                                    ) : (
+                                                        <div class="text-xs text-slate-500 italic p-4 text-center glass-panel-inner rounded-xl border border-slate-700/20">
+                                                            {compareResult.optimized && compareResult.optimized.error
+                                                                ? `⚠️ ${compareResult.optimized.error}`
+                                                                : 'No sample rows returned. The optimized query may return 0 rows for this dataset.'}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         )}
                                     </div>

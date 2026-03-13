@@ -146,12 +146,12 @@ class SQLParser:
         return ctes
     
     def _extract_tables(self, query: str) -> List[str]:
-        """Simple regex extraction mapping table names directly following a FROM keyword."""
+        """Simple regex extraction mapping table names directly following a FROM or JOIN keyword."""
         tables = []
-        pattern = r'FROM\s+(\w+)'
+        pattern = r'(?:FROM|JOIN)\s+(\w+)'
         for match in re.finditer(pattern, query, re.IGNORECASE):
             tables.append(match.group(1))
-        return tables
+        return list(set(tables))
     
     def _extract_joins(self, query: str, lines: List[str]) -> List[Dict[str, Any]]:
         """Finds all JOIN logic mapped to precise original line tracking details."""

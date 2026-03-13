@@ -37,36 +37,55 @@ class EquivalenceValidator:
             sys.path.insert(0, '/home/galaxy/DB_setup/sql_optimizer_agent')
             from analyzer.sql_parser import SQLParser
             parser = SQLParser()
-            t1 = parser.parse(original_query).tables
-            t2 = parser.parse(optimized_query).tables
-            used_tables = list(set(t1 + t2))
+            p1 = parser.parse(original_query)
+            p2 = parser.parse(optimized_query)
+            t1 = p1.tables
+            t2 = p2.tables
+            
+            # Filter out CTEs from used_tables. CTEs are session-local and don't exist in public schema.
+            cte_names = [cte['name'] for cte in (p1.ctes + p2.ctes)]
+            used_tables = list(set([t for t in (t1 + t2) if t not in cte_names]))
             
             validation_method_str = "Standard LIMIT Validation"
             
             if used_tables:
-                pgbench_bids = []
-                pgbench_tables = [t for t in used_tables if 'pgbench' in t.lower()]
-                generic_tables = [t for t in used_tables if 'pgbench' not in t.lower()]
+                import sys
+                sys.path.insert(0, '/home/galaxy/DB_setup/sql_optimizer_agent')
+                from analyzer.schema_analyzer import SchemaAnalyzer
+                schema_analyzer = SchemaAnalyzer(self.db_config)
                 
-                if pgbench_tables:
-                    # Sample 3 random branch IDs for relationally-consistent pgbench Anchored Stratified Sampling
-                    cursor.execute("SELECT bid FROM pgbench_branches ORDER BY RANDOM() LIMIT 3")
-                    pgbench_bids = [str(row[0]) for row in cursor.fetchall()]
-                    if pgbench_bids:
-                        validation_method_str = "Anchored Stratified Sampling (3 random pgbench branches)"
+                anchor_info = schema_analyzer.find_anchor_key(used_tables)
+                sampled_keys = []
+                key_list_str = ""
                 
-                if generic_tables and not pgbench_tables:
+                if anchor_info:
+                    anchor_table = anchor_info['anchor_table']
+                    anchor_key = anchor_info['anchor_key']
+                    related_tables = anchor_info['related_tables']
+                    method = anchor_info['method']
+                    
+                    # Sample 5 random keys from the anchor table to form our bounded universe
+                    try:
+                        cursor.execute(f"SELECT {anchor_key} FROM {anchor_table} ORDER BY RANDOM() LIMIT 5")
+                        sampled_keys = [str(row[0]) for row in cursor.fetchall() if row[0] is not None]
+                        
+                        if sampled_keys:
+                            validation_method_str = f"Dynamic Anchored Sampling ({len(sampled_keys)} {anchor_key}s via {method})"
+                            key_list_str = ",".join(f"'{k}'" for k in sampled_keys)
+                    except Exception as e:
+                        print(f"Sampling failed: {e}")
+                        
+                if not sampled_keys:
                     validation_method_str = "Statistical TABLESAMPLE Validation (1% sampling)"
 
                 # Shadow the public tables with small temporary datasets.
-                # Temp tables persist through transactions in the same session and bypass public.
                 for table in used_tables:
                     cursor.execute(f"DROP TABLE IF EXISTS pg_temp.{table}")
                     
-                    if table in pgbench_tables and pgbench_bids:
+                    if sampled_keys and (table == anchor_table or table in related_tables):
+                        fk_col = anchor_key if table == anchor_table else related_tables[table]
                         # Anchored subset preserving foreign-keys bounds
-                        bid_list = ",".join(pgbench_bids)
-                        cursor.execute(f"CREATE TEMP TABLE {table} AS SELECT * FROM public.{table} WHERE bid IN ({bid_list})")
+                        cursor.execute(f"CREATE TEMP TABLE {table} AS SELECT * FROM public.{table} WHERE {fk_col} IN ({key_list_str})")
                     else:
                         # Generic arbitrary schema tables fallback
                         try:
@@ -107,6 +126,8 @@ class EquivalenceValidator:
                 orig_columns, opt_columns
             )
             result['validation_method'] = validation_method_str
+            result['sampled_keys'] = sampled_keys if 'sampled_keys' in locals() else []
+            result['anchor_table'] = anchor_table if 'anchor_table' in locals() else None
             return result
             
         except psycopg2.Error as e:
@@ -126,7 +147,7 @@ class EquivalenceValidator:
         query = query.rstrip().rstrip(';')
         return (
             f"SELECT * FROM (\n{query}\n) AS wrapped_query "
-            f"ORDER BY 1,2,3,4,5,6,7,8,9,10 LIMIT {limit}"
+            f"ORDER BY wrapped_query LIMIT {limit}"
         )
     
     def _compare_results(self, orig_results, opt_results,
