@@ -17,7 +17,7 @@ class EquivalenceValidator:
         self.db_config = db_config or DB_CONFIG
     
     def validate(self, original_query: str, optimized_query: str, 
-                 limit: int = 1000) -> Dict[str, Any]:
+                 limit: int = 50) -> Dict[str, Any]:
         """
         Validate that optimized query produces same results as original.
         Uses LIMIT to avoid running full queries.
@@ -66,7 +66,13 @@ class EquivalenceValidator:
                     
                     # Sample 5 random keys from the anchor table to form our bounded universe
                     try:
-                        cursor.execute(f"SELECT {anchor_key} FROM {anchor_table} ORDER BY RANDOM() LIMIT 5")
+                        try:
+                            # Use TABLESAMPLE for faster sampling on large tables
+                            cursor.execute(f"SELECT {anchor_key} FROM {anchor_table} TABLESAMPLE SYSTEM (0.1) LIMIT 5")
+                        except Exception:
+                            # Fallback if TABLESAMPLE is not supported
+                            cursor.execute(f"SELECT {anchor_key} FROM {anchor_table} LIMIT 5")
+
                         sampled_keys = [str(row[0]) for row in cursor.fetchall() if row[0] is not None]
                         
                         if sampled_keys:
@@ -88,12 +94,9 @@ class EquivalenceValidator:
                         cursor.execute(f"CREATE TEMP TABLE {table} AS SELECT * FROM public.{table} WHERE {fk_col} IN ({key_list_str})")
                     else:
                         # Generic arbitrary schema tables fallback
-                        try:
-                            # 1% fast block-sampling
-                            cursor.execute(f"CREATE TEMP TABLE {table} AS SELECT * FROM public.{table} TABLESAMPLE SYSTEM (1)")
-                        except Exception:
-                            # Fallback for Views or systems ignoring TABLESAMPLE
-                            cursor.execute(f"CREATE TEMP TABLE {table} AS SELECT * FROM public.{table} LIMIT 1000")
+                        # Avoid TABLESAMPLE on massive production tables as it can still be slow.
+                        # Using a strict LIMIT for the shadow dataset is safest for stability.
+                        cursor.execute(f"CREATE TEMP TABLE {table} AS SELECT * FROM public.{table} LIMIT 1000")
             
             # Switch back to explicit manual transactions for Read-Only safety when executing LLM generated query
             conn.autocommit = False

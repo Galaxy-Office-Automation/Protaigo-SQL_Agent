@@ -195,7 +195,7 @@ FROM t1
                 json_match = re.search(r'```(?:json)?\\s*([\\s\\S]*?)\\s*```', content)
                 if json_match:
                     # Strip markdown barriers and parses inner block directly
-                    result = json.loads(json_match.group(1))
+                    result = json.loads(json_match.group(1).strip())
                 else:
                     # Fail loudly if we still cannot extract JSON
                     result = {"raw_response": content, "error": "Could not parse JSON"}
