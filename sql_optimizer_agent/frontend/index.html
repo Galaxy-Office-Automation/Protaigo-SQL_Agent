@@ -318,6 +318,7 @@
             const [compareResult, setCompareResult] = useState(null);
             const [compareError, setCompareError] = useState('');
             const [activeTab, setActiveTab] = useState('changes');
+            const [activeSampleTab, setActiveSampleTab] = useState('optimized');
 
             const handleCompare = async () => {
                 if (!result || !result.optimized_query) return;
@@ -346,6 +347,7 @@
                 if (!query.trim()) return;
                 setCompareStatus('idle');
                 setCompareResult(null);
+                setActiveSampleTab('optimized');
                 setStatus('loading');
                 setResult(null);
                 setErrorMsg('');
@@ -565,48 +567,77 @@
                                                     })()}
                                                 </div>
 
-                                                {/* Sample Output of Optimized Query */}
+                                                {/* Sample Output Selection Tabs */}
                                                 <div class="pt-3 border-t border-slate-700/30">
                                                     <div class="flex items-center justify-between mb-3">
-                                                        <h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                                                            Sample Output (First {compareResult.optimized && compareResult.optimized.sample_rows ? compareResult.optimized.sample_rows.length : 0} Rows)
-                                                        </h4>
+                                                        <div class="flex items-center gap-1 bg-slate-800/40 p-1 rounded-lg border border-slate-700/30">
+                                                            <button
+                                                                onClick={() => setActiveSampleTab('original')}
+                                                                class={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${activeSampleTab === 'original' ? 'bg-indigo-500 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+                                                            >
+                                                                ORIGINAL OUTPUT
+                                                            </button>
+                                                            <button
+                                                                onClick={() => setActiveSampleTab('optimized')}
+                                                                class={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${activeSampleTab === 'optimized' ? 'bg-emerald-500 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+                                                            >
+                                                                OPTIMIZED OUTPUT
+                                                            </button>
+                                                        </div>
                                                         {compareResult.results_match !== undefined && (
                                                             <span class={`text-[10px] px-2.5 py-1 rounded-full font-bold ${compareResult.results_match
                                                                 ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
                                                                 : 'bg-amber-500/15 text-amber-400 border border-amber-500/20'}`}>
-                                                                {compareResult.results_match ? '✅ Results Identical' : '⚠️ Results Differ — review the optimized query'}
+                                                                {compareResult.results_match ? '✅ Results Identical' : '⚠️ Results Differ'}
                                                             </span>
                                                         )}
                                                     </div>
-                                                    {compareResult.optimized && compareResult.optimized.sample_rows && compareResult.optimized.sample_rows.length > 0 ? (
-                                                        <div class="overflow-x-auto border border-emerald-500/15 rounded-xl bg-slate-900/60">
-                                                            <table class="min-w-full text-[11px] font-mono">
-                                                                <thead class="bg-emerald-500/8 sticky top-0">
-                                                                    <tr>
-                                                                        {compareResult.optimized.columns.map((c, i) => (
-                                                                            <th key={i} class="px-3 py-2 text-left text-emerald-300/80 font-semibold whitespace-nowrap border-b border-emerald-500/10">{c}</th>
-                                                                        ))}
-                                                                    </tr>
-                                                                </thead>
-                                                                <tbody>
-                                                                    {compareResult.optimized.sample_rows.map((row, ri) => (
-                                                                        <tr key={ri} class={`border-b border-slate-800/30 ${ri % 2 === 0 ? 'bg-slate-900/30' : 'bg-slate-800/10'} hover:bg-slate-700/20 transition-colors`}>
-                                                                            {compareResult.optimized.columns.map((c, ci) => (
-                                                                                <td key={ci} class="px-3 py-1.5 text-slate-300 whitespace-nowrap">{row[c]}</td>
-                                                                            ))}
-                                                                        </tr>
-                                                                    ))}
-                                                                </tbody>
-                                                            </table>
-                                                        </div>
-                                                    ) : (
-                                                        <div class="text-xs text-slate-500 italic p-4 text-center glass-panel-inner rounded-xl border border-slate-700/20">
-                                                            {compareResult.optimized && compareResult.optimized.error
-                                                                ? `⚠️ ${compareResult.optimized.error}`
-                                                                : 'No sample rows returned. The optimized query may return 0 rows for this dataset.'}
-                                                        </div>
-                                                    )}
+
+                                                    {(() => {
+                                                        const sampleData = activeSampleTab === 'original' ? compareResult.original : compareResult.optimized;
+                                                        const colorClass = activeSampleTab === 'original' ? 'indigo' : 'emerald';
+
+                                                        if (sampleData && sampleData.columns && sampleData.columns.length > 0) {
+                                                            return (
+                                                                <div class={`overflow-x-auto border border-${colorClass}-500/20 rounded-xl bg-slate-900/60 transition-all mb-2`}>
+                                                                    <table class="min-w-full text-[11px] font-mono">
+                                                                        <thead class={`bg-${colorClass}-500/10 sticky top-0`}>
+                                                                            <tr>
+                                                                                {sampleData.columns.map((c, i) => (
+                                                                                    <th key={i} class={`px-3 py-2 text-left text-${colorClass}-300 font-semibold whitespace-nowrap border-b border-${colorClass}-500/10`}>{c}</th>
+                                                                                ))}
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody>
+                                                                            {sampleData.sample_rows && sampleData.sample_rows.length > 0 ? (
+                                                                                sampleData.sample_rows.map((row, ri) => (
+                                                                                    <tr key={ri} class={`border-b border-slate-800/30 ${ri % 2 === 0 ? 'bg-slate-900/30' : 'bg-slate-800/10'} hover:bg-slate-700/20 transition-colors`}>
+                                                                                        {sampleData.columns.map((c, ci) => (
+                                                                                            <td key={ci} class="px-3 py-1.5 text-slate-300 whitespace-nowrap">{row[c]}</td>
+                                                                                        ))}
+                                                                                    </tr>
+                                                                                ))
+                                                                            ) : (
+                                                                                <tr>
+                                                                                    <td colSpan={sampleData.columns.length} class="px-3 py-8 text-center text-slate-500 italic bg-slate-900/20">
+                                                                                        No rows returned for this query. {sampleData.error ? `Error: ${sampleData.error}` : ''}
+                                                                                    </td>
+                                                                                </tr>
+                                                                            )}
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            );
+                                                        } else {
+                                                            return (
+                                                                <div class="text-xs text-slate-500 italic p-4 text-center glass-panel-inner rounded-xl border border-slate-700/20">
+                                                                    {sampleData && sampleData.error
+                                                                        ? `⚠️ ${sampleData.error}`
+                                                                        : `No data available for the ${activeSampleTab} query.`}
+                                                                </div>
+                                                            );
+                                                        }
+                                                    })()}
                                                 </div>
                                             </div>
                                         )}
