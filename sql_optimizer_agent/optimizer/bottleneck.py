@@ -95,7 +95,7 @@ class BottleneckDetector:
             },
             {
                 'name': 'SUBQUERY_IN_SELECT',
-                'pattern': r'SELECT\s+.*?\(\s*SELECT',
+                'pattern': r'SELECT\s+[^(]*\(\s*SELECT',
                 'severity': 'HIGH',
                 'description': 'Subquery in SELECT executes per row (N+1)',
                 'impact_template': 'Executes subquery for each row',
@@ -193,10 +193,11 @@ class BottleneckDetector:
         query_upper = query.upper()
         
         # Detect both explicit CROSS JOIN and self-join patterns
-        # Self-join: JOIN ... ON ... col != col  (acts like a cross join)
+        # Self-join: JOIN ... ON ... col != col (acts like a cross join)
+        # Constrain regex to avoid catastrophic backtracking on large queries
         has_cross = 'CROSS JOIN' in query_upper
         has_self_join = bool(re.search(
-            r'JOIN\s+\w+\s+\w+\s+ON\b.*!=', query_upper, re.DOTALL
+            r'JOIN\s+\w+\s+\w+\s+ON\s+[^;]+?!=', query_upper, re.DOTALL | re.IGNORECASE
         ))
         
         if not has_cross and not has_self_join:

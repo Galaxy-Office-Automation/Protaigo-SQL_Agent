@@ -50,11 +50,16 @@ class QueryRewriter:
         
         Consolidates all subqueries hitting the same table into a single CTE
         and replaces inline subqueries with CTE column references.
+        
+        SAFETY: Only rewrites *simple* correlated subqueries whose WHERE clause
+        is exactly ``alias.col = outer.col``.  Subqueries with AND/OR, nested
+        SELECTs, window functions (OVER), or LIMIT are skipped to avoid
+        producing incorrect SQL.
         """
         query_upper = query.upper()
         
         # Only proceed if there are subqueries in SELECT
-        if 'SELECT' not in query_upper or query_upper.count('(') < 3:
+        if 'SELECT' not in query_upper or query_upper.count('(') < 1:
             return query
         
         # Safe parsing: Use regex just to find the start, then string parsing
@@ -96,6 +101,32 @@ class QueryRewriter:
                                 t_alias = table_section[-1]
                                 
                                 where_cond = subq_text_norm[where_pos+7 : -1].strip()
+
+                                # ── SAFETY GUARDS ──
+                                # Skip subqueries with complex WHERE clauses that
+                                # cannot be safely decomposed into a single CTE join.
+                                where_cond_upper = where_cond.upper()
+
+                                # Guard 1: multi-condition WHERE (AND / OR)
+                                if re.search(r'\bAND\b|\bOR\b', where_cond_upper):
+                                    continue
+
+                                # Guard 2: nested SELECT inside WHERE
+                                if 'SELECT' in where_cond_upper:
+                                    continue
+
+                                # Guard 3: window functions in the aggregate expression
+                                if 'OVER' in subq_upper:
+                                    continue
+
+                                # Guard 4: LIMIT inside the subquery
+                                if 'LIMIT' in subq_upper:
+                                    continue
+
+                                # Guard 5: type casts (::) in the join condition
+                                if '::' in where_cond:
+                                    continue
+
                                 if '=' in where_cond:
                                     left_part, right_part = where_cond.split('=', 1)
                                     left_part = left_part.strip()
@@ -107,7 +138,16 @@ class QueryRewriter:
                                             right_alias, right_col = right_part.split('.')
                                         except ValueError:
                                             continue  # Not a simple a.b = c.d condition
-                                            
+
+                                        # Guard 6: aliases must be simple identifiers
+                                        if not (left_alias.strip().isidentifier() and left_col.strip().isidentifier()
+                                                and right_alias.strip().isidentifier() and right_col.strip().isidentifier()):
+                                            continue
+
+                                        left_col = left_col.strip()
+                                        right_alias = right_alias.strip()
+                                        right_col = right_col.strip()
+
                                         # Get the alias assigned to this subquery
                                         remaining = query[close_idx+1:].strip()
                                         alias_match = remaining[3:].split()[0].rstrip(', \n\t')  # Skip 'AS '
@@ -190,14 +230,22 @@ class QueryRewriter:
         # Add CTE at the beginning
         cte_header = "WITH " + ",\n".join(cte_parts)
         
-        # Check if query already has WITH
-        with_match = re.match(r'^\s*WITH\b', result, re.IGNORECASE)
-        if with_match:
-            # Prepend to existing WITH
-            result = re.sub(r'^(\s*WITH)\b', f'{cte_header},\n', result, count=1, flags=re.IGNORECASE)
+        # Check if query already has WITH by looking at the first word
+        # Using lstrip() is more robust than regex for leading whitespace
+        lstripped = result.lstrip()
+        lstripped_upper = lstripped.upper()
+        
+        if lstripped_upper.startswith('WITH '):
+            # Prepend to existing WITH by finding the WITH keyword
+            with_pos = result.upper().find('WITH ')
+            result = result[:with_pos+5] + cte_header[5:] + ",\n" + result[with_pos+5:]
+        elif lstripped_upper.startswith('SELECT'):
+             # Prepend before SELECT
+             select_pos = result.upper().find('SELECT')
+             result = result[:select_pos] + cte_header + "\n" + result[select_pos:]
         else:
-            # Add WITH before SELECT
-            result = re.sub(r'^(\s*SELECT)\b', f'{cte_header}\nSELECT', result, count=1, flags=re.IGNORECASE)
+             # Fallback: Just prepend it
+             result = cte_header + "\n" + result
         
         # Add LEFT JOIN(s) before WHERE
         join_clause = "\n".join(cte_joins)

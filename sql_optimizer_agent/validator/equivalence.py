@@ -150,7 +150,7 @@ class EquivalenceValidator:
         query = query.rstrip().rstrip(';')
         return (
             f"SELECT * FROM (\n{query}\n) AS wrapped_query "
-            f"ORDER BY wrapped_query LIMIT {limit}"
+            f"ORDER BY 1 LIMIT {limit}"
         )
     
     def _compare_results(self, orig_results, opt_results,

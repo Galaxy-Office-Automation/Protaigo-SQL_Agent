@@ -178,7 +178,12 @@ class OptimizationStrategies:
 
     def _suggest_sort_removal(self, lines: List[str], 
                             bottleneck: Any) -> Optional[OptimizationSuggestion]:
-        """Suggest removing redundant sorts in CTEs."""
+        """Suggest removing redundant sorts in CTEs.
+        
+        Uses parenthesis depth tracking to determine whether the ORDER BY
+        is inside a CTE/subquery (safe to remove) or in the outer query
+        (must keep).
+        """
         line_num = bottleneck.line_number
         if line_num <= 0: return None
         
@@ -196,9 +201,26 @@ class OptimizationStrategies:
         if is_window or re.search(r'\bOVER\s*\(', line, re.IGNORECASE) or 'PARTITION' in line.upper():
             return None
             
-        # Check if we are inside a CTE (approximate check)
-        # If the query ends later, and we have an ORDER BY here, it's often redundant.
-        if line_num < len(lines) - 5: 
+        # Use parenthesis depth to determine if this ORDER BY is inside a
+        # CTE/subquery (depth > 0) or in the outer query (depth == 0).
+        # Only suggest removal when the ORDER BY is inside a nested context.
+        paren_depth = 0
+        for i in range(line_num - 1):
+            for ch in lines[i]:
+                if ch == '(':
+                    paren_depth += 1
+                elif ch == ')':
+                    paren_depth -= 1
+        # Also count characters on the current line up to the ORDER BY keyword
+        order_pos = lines[line_num - 1].upper().find('ORDER')
+        if order_pos >= 0:
+            for ch in lines[line_num - 1][:order_pos]:
+                if ch == '(':
+                    paren_depth += 1
+                elif ch == ')':
+                    paren_depth -= 1
+
+        if paren_depth > 0:
             return OptimizationSuggestion(
                 strategy_id='REDUNDANT_SORT_REMOVAL',
                 line_number=line_num,
