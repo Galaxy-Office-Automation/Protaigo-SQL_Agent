@@ -124,7 +124,29 @@ class BottleneckDetector:
                 'description': 'CTE output may be large, slowing down downstream JOINs',
                 'impact_template': 'Intermediate result set size unclear',
                 'suggestion': 'Use JOINs instead of large IN clauses or filter earlier in the CTE'
-            }
+            },
+            # ── NEW RULE ──────────────────────────────────────────────────────
+            # CAST(col AS TYPE) = CAST(col AS TYPE) in a JOIN ON clause silently
+            # disables index usage on BOTH sides of the join and forces a full
+            # sequential scan + hash join regardless of existing indexes.
+            # This is one of the most damaging (and easiest to miss) anti-patterns.
+            {
+                'name': 'CAST_IN_JOIN_CONDITION',
+                'pattern': r'\bON\b.*CAST\s*\(',
+                'severity': 'HIGH',
+                'description': (
+                    'CAST() in JOIN ON condition prevents index usage on both sides. '
+                    'PostgreSQL cannot use an index on CAST(a.bid AS TEXT) — it must '
+                    'scan every row and cast it at runtime.'
+                ),
+                'impact_template': 'Full sequential scan on both joined tables — index on join columns is completely bypassed',
+                'suggestion': (
+                    'Remove the CAST: join on the native column types directly '
+                    '(e.g. ON a.bid = b.bid). If types genuinely differ, add a '
+                    'generated/functional index: CREATE INDEX ON table ((col::target_type)). '
+                    'This single change can improve join speed by 100x on large tables.'
+                )
+            },
         ]
     
     def detect(self, query: str, 
@@ -181,6 +203,13 @@ class BottleneckDetector:
         # Detect cross-join row explosion
         self._detect_cross_join_explosion(query, lines, bottlenecks)
         
+        # Detect CAST() used in JOIN ON conditions (disables index usage)
+        self._detect_cast_in_join(query, lines, bottlenecks)
+
+        # Detect correlated subqueries that span multiple lines
+        # (pattern-based rule only fires when SELECT and ( are on the same line)
+        self._detect_multiline_correlated_subqueries(query, lines, bottlenecks)
+        
         # Sort by severity
         severity_order = {'HIGH': 0, 'MEDIUM': 1, 'LOW': 2}
         bottlenecks.sort(key=lambda x: severity_order.get(x.severity, 3))
@@ -234,6 +263,138 @@ class BottleneckDetector:
                     suggestion=f"Add missing JOIN conditions or use more selective filters"
                 ))
     
+    def _detect_cast_in_join(self, query: str, lines: List[str],
+                              bottlenecks: List[Bottleneck]):
+        """
+        Scan JOIN … ON clauses for CAST(col AS TYPE) patterns.
+
+        The rule-pattern above fires once per line, but a JOIN ON can span
+        multiple lines (e.g. the condition is on the line after ON).  This
+        method does a multi-line scan so nothing is missed, and de-duplicates
+        against bottlenecks already added by the single-line pass.
+
+        It also fires for the PostgreSQL shorthand cast syntax  col::TYPE
+        inside a JOIN ON condition, which has the same index-defeating effect.
+        """
+        already_flagged_lines = {
+            b.line_number for b in bottlenecks
+            if b.bottleneck_type == 'CAST_IN_JOIN_CONDITION'
+        }
+
+        # Walk through lines looking for ON … CAST or ON … ::TYPE patterns
+        in_join = False
+        for i, line in enumerate(lines, 1):
+            line_upper = line.upper().strip()
+
+            # Track whether we're inside a JOIN … ON block
+            if re.search(r'\bJOIN\b', line_upper):
+                in_join = True
+            if re.search(r'\bWHERE\b|\bGROUP\s+BY\b|\bORDER\s+BY\b|\bHAVING\b', line_upper):
+                in_join = False
+
+            if not in_join:
+                continue
+
+            has_cast  = bool(re.search(r'\bCAST\s*\(', line_upper))
+            has_colon = bool(re.search(r'::\s*\w+', line))   # e.g. a.bid::TEXT
+
+            if (has_cast or has_colon) and i not in already_flagged_lines:
+                # Check this line or the previous line has ON/JOIN context
+                context = (lines[i - 2].upper() if i >= 2 else '') + line_upper
+                if re.search(r'\bON\b|\bJOIN\b', context):
+                    already_flagged_lines.add(i)
+                    cast_type = 'CAST()' if has_cast else '::<TYPE> shorthand'
+                    bottlenecks.append(Bottleneck(
+                        bottleneck_type='CAST_IN_JOIN_CONDITION',
+                        severity='HIGH',
+                        line_number=i,
+                        line_content=line.strip(),
+                        description=(
+                            f'{cast_type} in JOIN ON condition prevents index usage '
+                            'on both sides of the join.'
+                        ),
+                        impact='Full sequential scan on both joined tables — index is bypassed',
+                        suggestion=(
+                            'Join on native column types directly (ON a.bid = b.bid). '
+                            'If types genuinely differ, add a functional index.'
+                        )
+                    ))
+
+    def _detect_multiline_correlated_subqueries(self, query: str, lines: List[str],
+                                                  bottlenecks: List[Bottleneck]):
+        """
+        Detect correlated subqueries in the SELECT list that span multiple lines.
+
+        The single-line rule pattern  SELECT ... ( SELECT  fires only when the
+        opening paren and SELECT keyword are on the same line.  In practice,
+        authors often write:
+
+            (                     ← line N   (bare open-paren)
+                SELECT COUNT(*)   ← line N+1
+                FROM …
+                WHERE alias.col = outer.col
+            ) AS name
+
+        This method scans for bare '(' lines inside the SELECT list and checks
+        whether the next non-blank line starts with SELECT, flagging each
+        occurrence once.
+        """
+        already_flagged_lines = {
+            b.line_number for b in bottlenecks
+            if b.bottleneck_type == 'SUBQUERY_IN_SELECT'
+        }
+
+        # We only care about subqueries inside the outer SELECT list, i.e.
+        # before the first FROM clause at depth 0.  Track paren depth.
+        depth = 0
+        in_select_list = False
+        query_upper = query.upper()
+
+        # Find where the top-level FROM starts (very rough — enough for flagging)
+        # We walk line-by-line to stay aligned with line numbers.
+        past_first_from = False
+
+        for i, line in enumerate(lines, 1):
+            stripped = line.strip()
+            upper    = stripped.upper()
+
+            # Enter SELECT list on the very first SELECT
+            if not in_select_list and upper.startswith('SELECT'):
+                in_select_list = True
+
+            # Once we hit top-level FROM, stop looking
+            if in_select_list and depth == 0 and re.match(r'^FROM\b', upper):
+                past_first_from = True
+
+            if past_first_from:
+                break
+
+            if not in_select_list:
+                continue
+
+            # Update depth
+            depth += stripped.count('(') - stripped.count(')')
+
+            # A bare '(' line (possibly with only a comment before it)
+            # means a subquery is opening here
+            if re.match(r'^\(\s*(--.*)?$', stripped) and i not in already_flagged_lines:
+                # Peek at next non-blank line
+                for j in range(i, min(i + 3, len(lines))):
+                    next_stripped = lines[j].strip().upper()
+                    if next_stripped:
+                        if next_stripped.startswith('SELECT'):
+                            already_flagged_lines.add(i)
+                            bottlenecks.append(Bottleneck(
+                                bottleneck_type='SUBQUERY_IN_SELECT',
+                                severity='HIGH',
+                                line_number=i,
+                                line_content=stripped,
+                                description='Correlated subquery in SELECT executes once per row (N+1 problem)',
+                                impact='Executes subquery for every row in the outer result set',
+                                suggestion='Rewrite all correlated subqueries as a single CTE + LEFT JOIN'
+                            ))
+                        break
+
     def get_bottleneck_summary(self, bottlenecks: List[Bottleneck]) -> Dict[str, Any]:
         """Get a summary of detected bottlenecks"""
         return {
