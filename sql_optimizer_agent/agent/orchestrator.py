@@ -63,23 +63,23 @@ class AgentOrchestrator:
         """Run the complete optimization workflow in defined sequential steps."""
 
         # Step 1: Parse the query into a syntax tree and extract core components
-        parsed_query = self.sql_parser.parse(query)
+        parsed_query = self.sql_parser.parse(query)# tree structure me todte the usse, why? =>samaj sake ki query me kya ho rha hai(SELECT kaha h?, FROM kaha se aa rha hai?, WHERE kaha lga hai?, etc)
 
         # Step 2: Get execution plan (optional — runs actual EXPLAIN on the DB)
         execution_plan = None
         if self.use_explain:
             try:
-                execution_plan = self.exec_plan_parser.get_execution_plan(query)
+                execution_plan = self.exec_plan_parser.get_execution_plan(query)#ye db ko pochta h ki query ko kaise run krega(konsa index use krega, join kaise krega, etc) tum iske execute kaise karoge? why? =>taki pata chal sake ki query me kya ho rha hai(konsa part slow hai, konsa part fast hai, etc)
             except Exception as e:
                 print(f"Warning: Could not get execution plan: {e}")
 
         # Step 3: Detect bottlenecks using rule-based metrics
-        bottlenecks = self.bottleneck_detector.detect(query, parsed_query, execution_plan)
+        bottlenecks = self.bottleneck_detector.detect(query, parsed_query, execution_plan)#bimari dhoondta hai
 
         # Step 4: Generate rule-based optimization suggestions
-        suggestions = self.strategies.generate_suggestions(query, bottlenecks)
+        suggestions = self.strategies.generate_suggestions(query, bottlenecks)#bimari dhundne ke baad ilaj batata hai kaise=>konsa index use krega, join kaise krega, etc
 
-        # Step 5: LLM analysis (if enabled)
+        # Step 5: LLM analysis (if enabled) #ye llm ko query deta hai aur wo ilaj batata hai why=> ai complex query ko samaj sakta hai aur better solution dega jo code nai payega
         llm_analysis = None
         if self.use_llm and self.llm:
             try:
@@ -101,9 +101,9 @@ class AgentOrchestrator:
         # The old code always called rewriter.create_optimized_query() unconditionally
         # AFTER reflection, which corrupted the LLM-validated output every single time.
         # Now: rewriter only runs as a fallback when reflection itself crashes.
-        if self.use_llm and self.reflection_agent:
+        if self.use_llm and self.reflection_agent: 
             try:
-                optimized_query = self.reflection_agent.reflect_and_refine(
+                optimized_query = self.reflection_agent.reflect_and_refine(    #ai ne jo query diya h kud check karega ki jo og query ka reult jo aayega vahi ai wale query ka aayega na? agar haan to usko final answer bana lega warna ai ko bolega ki isko theek karo
                     query, optimized_query
                 )
                 # Reflection succeeded — do NOT rewrite again, skip to Step 6b
@@ -121,7 +121,7 @@ class AgentOrchestrator:
 
         # Step 6b: Syntax validation (only when use_explain=True and DB is live)
         if self.use_explain:
-            validation = self.syntax_validator.validate(optimized_query)
+            validation = self.syntax_validator.validate(optimized_query)# final query ko check karega ki syntax sahi h ya nhi agar optimized query me syntax error to user ko og query dedta h why=> appln crash na ho 
             if not validation.is_valid:
                 print(f"WARNING: Optimized query failed syntax validation: {validation.errors}")
                 if llm_analysis and 'optimized_query' in llm_analysis:
@@ -162,7 +162,7 @@ class AgentOrchestrator:
             elif 'analysis' in llm_analysis:
                 llm_analysis['analysis'] += val_str
 
-        # Step 7: Estimate expected improvement
+        # Step 7: Estimate expected improvement    check karta h severity kitni hogi aur kitne times query fst hogi phele se.
         expected_improvement = self._calculate_improvement(bottlenecks, suggestions, llm_analysis)
 
         return OptimizationResult(

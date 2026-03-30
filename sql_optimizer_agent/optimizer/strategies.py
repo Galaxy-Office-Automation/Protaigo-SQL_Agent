@@ -234,20 +234,25 @@ class OptimizationStrategies:
 
     def _suggest_lateral_join(self, lines: List[str], 
                              bottleneck: Any) -> Optional[OptimizationSuggestion]:
-        """Suggest using LATERAL JOIN for correlated subqueries."""
+        """Suggest using LATERAL JOIN for correlated subqueries.
+        
+        Advisory-only (line_number=0) because the structural rewrite is
+        handled by QueryRewriter.rewrite_correlated_subqueries(), not by
+        simple line replacement.
+        """
         line_num = bottleneck.line_number
         if line_num <= 0: return None
         
         line = lines[line_num - 1]
         
         return OptimizationSuggestion(
-            strategy_id='USE_LATERAL_JOIN',
-            line_number=line_num,
+            strategy_id='CONVERT_SUBQUERY_TO_JOIN',
+            line_number=0,  # Advisory only — do NOT replace any line
             original_content=line.strip(),
-            suggested_content="-- (Convert to LATERAL JOIN)",
-            explanation="Correlated subqueries in the SELECT list often force the planner into inefficient nested loops. A LATERAL join allows the planner to choose better join strategies while maintaining access to outer columns.",
-            expected_improvement="More flexible execution plan options",
-            confidence=0.8
+            suggested_content="-- Rewrite correlated subquery as CTE + LEFT JOIN to eliminate N+1 execution",
+            explanation="Correlated subqueries in the SELECT list execute once per row (N+1 problem). The rewriter consolidates them into a single CTE with GROUP BY and LEFT JOIN, reducing execution from O(N*M) to O(N+M).",
+            expected_improvement="Eliminates N+1 subquery execution pattern",
+            confidence=0.9
         )
 
     def _suggest_materialization(self, lines: List[str], 

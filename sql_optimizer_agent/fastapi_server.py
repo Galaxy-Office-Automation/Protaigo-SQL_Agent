@@ -309,9 +309,9 @@ def _build_shadow_tables(used_tables, anchor_info, sampled_keys,
 
 @app.post("/analyze")
 def analyze(req: QueryRequest):
-    log_buffer      = io.StringIO()
-    original_stdout = sys.stdout
-    sys.stdout      = log_buffer
+    log_buffer      = io.StringIO() #temporary memory buffer to capture logs
+    original_stdout = sys.stdout #store original stdout (screen par results dikhana)
+    sys.stdout      = log_buffer #redirect stdout to buffer
 
     logger    = logging.getLogger()
     old_level = logger.level
